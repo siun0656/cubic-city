@@ -186,18 +186,45 @@ $("btnRun").onclick = async () => {
   }
 };
 
+// 정리 순서: ① 교사 권한으로 Firestore 문서부터 삭제 ② 마지막에 시험 학생 로그인 계정 삭제
+// (v1 오류 수정: 계정 삭제 직후 나는 user-token-expired 때문에 문서 정리가 건너뛰어지던 문제)
 $("btnClean").onclick = async () => {
+  $("btnClean").disabled = true;
+  const step = async (label, fn) => {
+    try { await fn(); log("✓ " + label); }
+    catch (e) { log("· " + label + " – 건너뜀(" + (e.code || e.message) + ")"); }
+  };
+  // ① 학생 uid는 명단 문서에서 읽음(학생으로 로그인하지 않아도 됨)
+  let stuUid = null;
   try {
-    const S = await getStudentSession();
-    await deleteUser(S.auth2.currentUser); await deleteApp(S.app2);
-    await deleteDoc(doc(db, "users", S.uid));
-    await deleteDoc(doc(db, "classes", CLASS_ID, "students", TEST_STUDENT.id));
-    await deleteDoc(doc(db, "classes", CLASS_ID, "private", "pins"));
-    await deleteDoc(doc(db, "answerKeys", "TEST-Q"));
-    await deleteDoc(doc(db, "_setup", "ping"));
-    log("시험 학생 계정과 주요 시험 문서를 정리했습니다. (제출·손글씨 기록은 삭제 금지 규칙이라 TEST 학급에 남습니다)");
-    alert("정리했습니다.");
-  } catch (e) { log("정리 실패: " + (e.code || e.message)); }
+    const snap = await getDoc(doc(db, "classes", CLASS_ID, "students", TEST_STUDENT.id));
+    if (snap.exists()) stuUid = snap.data().authUid;
+  } catch (e) { log("명단 읽기 실패: " + e.code); }
+  if (stuUid) await step("학생 프로필(users) 삭제", () => deleteDoc(doc(db, "users", stuUid)));
+  await step("학생 명단 문서 삭제", () => deleteDoc(doc(db, "classes", CLASS_ID, "students", TEST_STUDENT.id)));
+  await step("PIN 보관 문서 삭제", () => deleteDoc(doc(db, "classes", CLASS_ID, "private", "pins")));
+  await step("시험 정답 키 삭제", () => deleteDoc(doc(db, "answerKeys", "TEST-Q")));
+  await step("점검용 문서 삭제", () => deleteDoc(doc(db, "_setup", "ping")));
+
+  // ② 시험 학생 로그인 계정 삭제 – '이미 없음'과 삭제 직후 토큰 오류는 성공으로 처리
+  const app2 = initializeApp(firebaseConfig, "cleanup-" + Date.now());
+  const auth2 = getAuth(app2);
+  try {
+    const cred = await signInWithEmailAndPassword(auth2, TEST_STUDENT.email, TEST_STUDENT.password);
+    try { await deleteUser(cred.user); log("✓ 시험 학생 로그인 계정 삭제"); }
+    catch (e) {
+      if (e.code === "auth/user-token-expired") log("✓ 시험 학생 로그인 계정 삭제(삭제 직후 토큰 만료 알림은 정상)");
+      else log("· 계정 삭제 실패(" + e.code + ") – 콘솔 Authentication → 사용자에서 직접 삭제해 주세요");
+    }
+  } catch (e) {
+    if (e.code === "auth/invalid-credential" || e.code === "auth/user-not-found") log("✓ 시험 학생 로그인 계정은 이미 없습니다");
+    else log("· 계정 확인 실패(" + e.code + ")");
+  } finally {
+    try { await deleteApp(app2); } catch (_) {}
+  }
+  log("정리 끝. (제출·손글씨 시험 기록은 '삭제 금지' 규칙이라 TEST 학급에 남습니다 – 실제 반과 섞이지 않음)");
+  alert("정리했습니다. 아래 '기록'에서 결과를 확인하세요.");
+  $("btnClean").disabled = false;
 };
 </script>
 </body>
