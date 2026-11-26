@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2a5a">
+<title>CUBIC CITY</title>
+<style>
+  :root { --navy:#1f2a5a; --ink:#1d2433; --sub:#5b6478; --line:#e6e9f0; --bg:#eef2fb;
+          --story:#f08a24; --lab:#2f6ff0; --wb:#18a058; --mm:#e04545; --ok:#0a7f3f; --bad:#c62828; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; }
+  body { font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink); background:var(--bg); font-size:20px; user-select:none; }
+  .hidden { display:none !important; }
+  button { font-family:inherit; cursor:pointer; border:0; }
+
+  /* 상단 바 */
+  .bar { height:60px; display:flex; align-items:center; gap:14px; padding:0 24px; background:var(--navy); color:#fff; }
+  .bar .logo { font-weight:800; letter-spacing:1px; font-size:22px; }
+  .bar .grow { flex:1; } .bar .me { font-size:18px; opacity:.9; }
+  .bar button { background:rgba(255,255,255,.15); color:#fff; padding:8px 14px; border-radius:10px; font-size:16px; min-height:44px; }
+
+  /* 로그인 */
+  #vLogin { height:100%; display:grid; grid-template-columns: 1fr 1fr; }
+  .hero { background:linear-gradient(160deg,#1f2a5a,#3651c9); color:#fff; display:flex; flex-direction:column; justify-content:center; padding:48px; }
+  .hero h1 { font-size:52px; margin:0 0 8px; letter-spacing:2px; } .hero p { font-size:20px; opacity:.85; margin:0; }
+  .cubes { margin-top:36px; font-size:64px; letter-spacing:12px; }
+  .panel { display:flex; flex-direction:column; justify-content:center; align-items:center; padding:24px; }
+  .panel h2 { margin:0 0 6px; font-size:26px; } .panel .hint { color:var(--sub); font-size:17px; margin:0 0 18px; text-align:center; }
+  .nums { display:grid; grid-template-columns:repeat(7, 64px); gap:10px; justify-content:center; }
+  .nums button { height:56px; border-radius:14px; background:#fff; font-size:22px; font-weight:700; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .nums button:active { transform:scale(.96); }
+  .pinBox { display:flex; gap:14px; margin:6px 0 18px; }
+  .pinBox span { width:52px; height:60px; border-radius:14px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; box-shadow:inset 0 0 0 2px var(--line); }
+  .pinBox span.f { box-shadow:inset 0 0 0 3px #3651c9; }
+  .pad { display:grid; grid-template-columns:repeat(3, 88px); gap:10px; }
+  .pad button { height:64px; border-radius:16px; background:#fff; font-size:28px; font-weight:700; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .pad button.sub { font-size:18px; color:var(--sub); }
+  .back { margin-top:16px; background:none; color:var(--sub); font-size:17px; text-decoration:underline; min-height:44px; }
+  .err { color:var(--bad); font-weight:700; min-height:28px; margin-top:12px; text-align:center; font-size:18px; }
+  .bigNo { font-size:46px; font-weight:800; margin:0; }
+
+  /* 홈 */
+  #vHome { min-height:100%; }
+  .homeWrap { padding:24px 32px; max-width:1280px; margin:0 auto; }
+  .hello { font-size:26px; font-weight:800; margin:4px 0 16px; }
+  .today { background:#fff; border-radius:20px; padding:20px 24px; box-shadow:0 2px 6px rgba(0,0,0,.06); margin-bottom:22px; }
+  .today h3 { margin:0 0 6px; font-size:20px; color:var(--sub); font-weight:600; }
+  .today .t { font-size:24px; font-weight:800; } .today .s { color:var(--sub); font-size:17px; margin-top:4px; }
+  .menus { display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; }
+  .menu { border-radius:22px; padding:22px; min-height:210px; color:#fff; text-align:left; display:flex; flex-direction:column; justify-content:space-between; position:relative; box-shadow:0 4px 10px rgba(0,0,0,.12); }
+  .menu .ic { font-size:44px; } .menu .nm { font-size:22px; font-weight:800; letter-spacing:.5px; } .menu .ds { font-size:16px; opacity:.92; margin-top:4px; }
+  .menu .soon { position:absolute; top:14px; right:14px; background:rgba(255,255,255,.25); padding:4px 10px; border-radius:99px; font-size:14px; }
+  .m1 { background:var(--story); } .m2 { background:var(--lab); } .m3 { background:var(--wb); } .m4 { background:var(--mm); }
+  .menu[disabled] { filter:saturate(.75); }
+  .toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); background:#1d2433; color:#fff; padding:12px 22px; border-radius:14px; font-size:18px; opacity:0; transition:.25s; pointer-events:none; }
+  .toast.on { opacity:.95; }
+  .notice { max-width:640px; margin:14vh auto; background:#fff; border-radius:20px; padding:32px; text-align:center; }
+  .notice button { margin-top:18px; background:#3651c9; color:#fff; padding:12px 22px; border-radius:12px; font-size:18px; }
+  @media (max-width: 1100px) { .nums { grid-template-columns:repeat(6, 60px); } .hero h1 { font-size:42px; } .menus { gap:12px; } }
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<section id="vLogin" class="hidden">
+  <div class="hero">
+    <h1>CUBIC CITY</h1>
+    <p>직육면체의 도시에 온 것을 환영해요!</p>
+    <div class="cubes">🧊📦🎲</div>
+  </div>
+  <div class="panel">
+    <!-- 1) 학급 정보 없음 -->
+    <div id="stepNoClass" class="hidden" style="text-align:center">
+      <h2>학급 QR을 찍어 주세요</h2>
+      <p class="hint">선생님이 보여 주는 QR 코드나<br>로그인 카드의 QR 코드를 태블릿 카메라로 찍으면 들어올 수 있어요.</p>
+    </div>
+    <!-- 2) 번호 고르기 -->
+    <div id="stepNum" class="hidden" style="text-align:center">
+      <h2>내 번호를 눌러요</h2>
+      <p class="hint" id="className"></p>
+      <div class="nums" id="nums"></div>
+    </div>
+    <!-- 3) PIN -->
+    <div id="stepPin" class="hidden" style="display:flex;flex-direction:column;align-items:center">
+      <p class="bigNo" id="pinNo"></p>
+      <p class="hint">로그인 카드의 PIN 4자리를 눌러요</p>
+      <div class="pinBox" id="pinBox"><span></span><span></span><span></span><span></span></div>
+      <div class="pad" id="pad"></div>
+      <div class="err" id="err"></div>
+      <button class="back" id="btnBack">번호 다시 고르기</button>
+    </div>
+  </div>
+</section>
+
+<!-- 홈 -->
+<section id="vHome" class="hidden">
+  <div class="bar">
+    <span class="logo">CUBIC CITY</span><span class="grow"></span>
+    <span class="me" id="meLabel"></span>
+    <button id="btnLogout">나가기</button>
+  </div>
+  <div class="homeWrap">
+    <p class="hello" id="hello"></p>
+    <div class="today">
+      <h3>오늘의 과제</h3>
+      <div id="todayBody"><div class="t">불러오는 중…</div></div>
+    </div>
+    <div class="menus">
+      <button class="menu m1" data-menu="STORY ROOM"><span class="soon">곧 열려요</span><span class="ic">📖</span><span><span class="nm">STORY ROOM</span><div class="ds">이야기로 개념 배우기</div></span></button>
+      <button class="menu m2" data-menu="3D LAB"><span class="soon">곧 열려요</span><span class="ic">🧊</span><span><span class="nm">3D LAB</span><div class="ds">직육면체 돌려 보기</div></span></button>
+      <button class="menu m3" data-menu="MATH WORKBOOK"><span class="soon">곧 열려요</span><span class="ic">✏️</span><span><span class="nm">MATH WORKBOOK</span><div class="ds">수학익힘 풀고 확인하기</div></span></button>
+      <button class="menu m4" data-menu="MY MISTAKES"><span class="soon">곧 열려요</span><span class="ic">📒</span><span><span class="nm">MY MISTAKES</span><div class="ds">오답노트·다시 도전</div></span></button>
+    </div>
+  </div>
+</section>
+
+<!-- 안내(교사 계정·정지 등) -->
+<section id="vNotice" class="hidden"><div class="notice"><h2 id="noticeTitle"></h2><p id="noticeBody" class="hint"></p><button id="noticeBtn">나가기</button></div></section>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, collection, query, where, getDocs }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// 학생 데이터 보호를 위해 Analytics는 쓰지 않습니다. 이 파일에는 정답·채점 기준이 없습니다.
+const firebaseConfig = {
+  apiKey: "AIzaSyAMIHxN7imMkZhjX5SEzQ5zwK0DYGw74Ec",
+  authDomain: "mathdata-e79ba.firebaseapp.com",
+  projectId: "mathdata-e79ba",
+  storageBucket: "mathdata-e79ba.firebasestorage.app",
+  messagingSenderId: "561209857926",
+  appId: "1:561209857926:web:b7125a64aefc1c782c7e07"
+};
+const EMAIL_DOMAIN = "mathdata-e79ba.firebaseapp.com";
+const DEFAULT_RANGES = "1-14,31-40";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+setPersistence(auth, browserLocalPersistence).catch(() => {});
+
+const $ = (s) => document.querySelector(s);
+const sid = (n) => "s" + String(n).padStart(2, "0");
+const show = (id) => ["#vLogin", "#vHome", "#vNotice"].forEach(v => $(v).classList.toggle("hidden", v !== id));
+const step = (id) => ["#stepNoClass", "#stepNum", "#stepPin"].forEach(v => $(v).classList.toggle("hidden", v !== id));
+const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2200); };
+function parseRanges(r) {
+  const out = [];
+  String(r || "").split(",").forEach(p => { const m = p.trim().match(/^(\d+)(?:-(\d+))?$/); if (m) { const a = +m[1], b = +(m[2] || m[1]); for (let i = a; i <= b; i++) out.push(i); } });
+  return out.length ? out : parseRanges(DEFAULT_RANGES);
+}
+
+// ── 학급 정보: QR 주소(?c=학급ID&k=코드&r=번호범위&n=번호) → 기기에 기억 ──
+const qp = new URLSearchParams(location.search);
+if (qp.get("c") && qp.get("k")) {
+  localStorage.setItem("cc.class", JSON.stringify({ c: qp.get("c"), k: qp.get("k"), r: qp.get("r") || DEFAULT_RANGES }));
+}
+const presetNo = qp.get("n") ? +qp.get("n") : null;
+if (qp.toString()) history.replaceState(null, "", location.pathname);   // 주소창에서 코드 숨김
+const cls = JSON.parse(localStorage.getItem("cc.class") || "null");
+
+// ── 로그인 화면 ────────────────────────────────────────
+let chosenNo = null, pin = "", busy = false;
+function renderNums() {
+  const box = $("#nums"); box.innerHTML = "";
+  parseRanges(cls.r).forEach(n => { const b = document.createElement("button"); b.textContent = n; b.onclick = () => choose(n); box.appendChild(b); });
+  const parts = cls.c.split("-"); $("#className").textContent = parts.length === 3 ? `${parts[1]}학년 ${parts[2]}반` : "";
+}
+function choose(n) { chosenNo = n; pin = ""; $("#pinNo").textContent = `${n}번`; $("#err").textContent = ""; drawPin(); step("#stepPin"); }
+function drawPin() { [...$("#pinBox").children].forEach((s, i) => { s.textContent = i < pin.length ? "●" : ""; s.classList.toggle("f", i === pin.length); }); }
+(function buildPad() {
+  const keys = ["1","2","3","4","5","6","7","8","9","지우기","0","처음"];
+  keys.forEach(k => {
+    const b = document.createElement("button"); b.textContent = k; if (k.length > 1) b.className = "sub";
+    b.onclick = () => {
+      if (busy) return;
+      if (k === "지우기") pin = pin.slice(0, -1); else if (k === "처음") pin = ""; else if (pin.length < 4) pin += k;
+      $("#err").textContent = ""; drawPin(); if (pin.length === 4) login();
+    };
+    $("#pad").appendChild(b);
+  });
+})();
+$("#btnBack").onclick = () => { pin = ""; step("#stepNum"); };
+
+async function login() {
+  busy = true; $("#err").textContent = "확인하는 중…"; $("#err").style.color = "var(--sub)";
+  try {
+    const email = `${sid(chosenNo)}.c-${cls.c}@${EMAIL_DOMAIN}`.toLowerCase();
+    await signInWithEmailAndPassword(auth, email, `mc-${cls.k}-${pin}`);
+  } catch (e) {
+    $("#err").style.color = "var(--bad)";
+    const msg = {
+      "auth/invalid-credential": "번호나 PIN을 다시 확인해요.",
+      "auth/wrong-password": "번호나 PIN을 다시 확인해요.",
+      "auth/user-not-found": "번호나 PIN을 다시 확인해요.",
+      "auth/too-many-requests": "여러 번 틀렸어요. 잠시 후 다시 해 보세요. 계속 안 되면 선생님께!",
+      "auth/network-request-failed": "인터넷 연결을 확인해 주세요.",
+      "auth/user-disabled": "이 계정은 지금 쓸 수 없어요. 선생님께 말씀드려요."
+    }[e.code] || "로그인하지 못했어요. (" + e.code + ")";
+    $("#err").textContent = msg; pin = ""; drawPin();
+  } finally { busy = false; }
+}
+
+// ── 로그인 상태에 따라 화면 전환 ─────────────────────────
+onAuthStateChanged(auth, async (u) => {
+  if (!u) {
+    show("#vLogin");
+    if (!cls) step("#stepNoClass");
+    else { renderNums(); if (presetNo && parseRanges(cls.r).includes(presetNo)) choose(presetNo); else step("#stepNum"); }
+    return;
+  }
+  try {
+    const p = await getDoc(doc(db, "users", u.uid));
+    if (!p.exists() || p.data().role !== "student") return notice("교사 계정으로 로그인되어 있어요", "학생 화면을 보려면 나가기를 누른 뒤 학생 번호로 들어와요. 교사 화면은 teacher.html에서 열 수 있어요.");
+    const prof = p.data();
+    if (!prof.active) return notice("지금은 들어갈 수 없어요", "선생님께 말씀드려요.");
+    await openHome(prof);
+  } catch (e) {
+    notice("정보를 불러오지 못했어요", "인터넷 연결을 확인하고 다시 들어와요. (" + (e.code || e.message) + ")");
+  }
+});
+function notice(t, b) { $("#noticeTitle").textContent = t; $("#noticeBody").textContent = b; show("#vNotice"); }
+$("#noticeBtn").onclick = () => signOut(auth);
+$("#btnLogout").onclick = () => { if (confirm("나갈까요? 다음에 들어올 때 PIN을 다시 눌러야 해요.")) signOut(auth); };
+
+async function openHome(prof) {
+  show("#vHome");
+  let stu = { studentNo: prof.studentNo, group: "" };
+  try { const s = await getDoc(doc(db, "classes", prof.classId, "students", prof.studentId)); if (s.exists()) stu = s.data(); } catch (_) {}
+  $("#meLabel").textContent = `${stu.studentNo}번${stu.group ? " · " + stu.group : ""}`;
+  $("#hello").textContent = `${stu.studentNo}번 친구, 반가워요! 👋`;
+  // 오늘의 과제: 열린 과제만
+  try {
+    const qs = await getDocs(query(collection(db, "classes", prof.classId, "assignments"), where("status", "==", "open")));
+    if (qs.empty) {
+      $("#todayBody").innerHTML = `<div class="t">아직 배정된 과제가 없어요</div><div class="s">선생님이 과제를 열면 여기에 나타나요.</div>`;
+    } else {
+      const a = qs.docs[0].data();
+      $("#todayBody").innerHTML = `<div class="t">${a.title || a.lessonId}</div><div class="s">교과서 ${a.textbookPages || ""} · 수학익힘 ${a.workbookPages || ""}</div>`;
+    }
+  } catch (e) { $("#todayBody").innerHTML = `<div class="t">과제를 불러오지 못했어요</div><div class="s">${e.code}</div>`; }
+}
+document.querySelectorAll(".menu").forEach(m => m.onclick = () => toast(`${m.dataset.menu}는 곧 열려요!`));
+</script>
+</body>
+</html>

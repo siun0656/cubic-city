@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUBIC CITY – 교사용</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  :root { --blue:#2f5bea; --ink:#1d2433; --sub:#5b6478; --line:#e6e9f0; --bg:#f4f6fb; --ok:#0a7f3f; --bad:#c62828; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:center; gap:16px; padding:12px 24px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:20px; margin:0; } header .grow { flex:1; }
+  header select { font-size:15px; padding:6px 8px; border-radius:8px; border:1px solid var(--line); }
+  main { max-width:1100px; margin:20px auto; padding:0 20px; }
+  nav { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  nav button { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  nav button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .card { background:#fff; border-radius:14px; padding:20px 22px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .card h2 { font-size:18px; margin:0 0 12px; }
+  button { font-size:15px; padding:9px 16px; border-radius:10px; border:0; background:var(--blue); color:#fff; cursor:pointer; }
+  button.ghost { background:#eef1f8; color:var(--ink); } button.danger { background:#fde8e8; color:var(--bad); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  input, select, textarea { font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; }
+  label { font-size:14px; color:var(--sub); margin-right:6px; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { padding:8px 6px; border-bottom:1px solid var(--line); text-align:left; }
+  th { color:var(--sub); font-weight:600; font-size:13px; }
+  .muted { color:var(--sub); font-size:14px; }
+  .ok { color:var(--ok); font-weight:700; } .bad { color:var(--bad); font-weight:700; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:13px; background:#eef1f8; }
+  .pill.ok { background:#e5f6ec; } .pill.bad { background:#fde8e8; }
+  #log { font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; color:var(--sub); max-height:180px; overflow:auto; background:#fafbfe; padding:8px; border-radius:8px; }
+  .hidden { display:none !important; }
+  .center { max-width:420px; margin:12vh auto; text-align:center; }
+  code { background:#eef1f8; padding:1px 6px; border-radius:5px; }
+  .qrbox img { width:150px; height:150px; image-rendering:pixelated; }
+  /* 로그인 카드 */
+  #cards { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+  .lc { border:2px dashed #b9c2d8; border-radius:12px; padding:14px; display:flex; gap:14px; align-items:center; break-inside:avoid; background:#fff; }
+  .lc img { width:120px; height:120px; image-rendering:pixelated; }
+  .lc .no { font-size:40px; font-weight:800; line-height:1; } .lc .pin { font-size:22px; letter-spacing:4px; font-weight:700; }
+  .lc .t { font-size:13px; color:var(--sub); }
+  @media print {
+    body { background:#fff; } header, nav, .noprint, .card:not(.printable) { display:none !important; }
+    main { margin:0; max-width:none; padding:0; } .card.printable { box-shadow:none; padding:0; }
+    #cards { gap:6mm; } .lc { height:62mm; }
+  }
+</style>
+</head>
+<body>
+<header class="noprint">
+  <h1>CUBIC CITY <span class="muted">교사용</span></h1>
+  <div class="grow"></div>
+  <select id="classSel" class="hidden"></select>
+  <span id="who" class="muted"></span>
+  <button id="btnLogout" class="ghost hidden">로그아웃</button>
+</header>
+
+<!-- 로그인 -->
+<section id="vLogin" class="center hidden">
+  <h2>교사 로그인</h2>
+  <p class="muted">지정된 교사 Google 계정으로 로그인하세요.</p>
+  <button id="btnLogin">Google로 로그인</button>
+  <p id="loginMsg" class="bad"></p>
+</section>
+
+<main id="vApp" class="hidden">
+  <nav class="noprint">
+    <button data-tab="class" class="on">학급</button>
+    <button data-tab="students">학생 계정·모둠</button>
+    <button data-tab="cards">로그인 카드</button>
+    <button data-tab="data">문항·정답 올리기</button>
+    <button data-tab="policy">채점 규칙</button>
+  </nav>
+
+  <!-- 학급 -->
+  <section data-pane="class">
+    <div class="card" id="newClassCard">
+      <h2>새 학급 만들기</h2>
+      <div class="row">
+        <label>연도</label><input id="ncYear" type="number" value="2026" style="width:90px">
+        <label>학년</label><input id="ncGrade" type="number" value="5" style="width:70px">
+        <label>반</label><input id="ncClass" type="number" placeholder="예: 6" style="width:70px">
+        <button id="btnCreateClass">학급 만들기</button>
+      </div>
+      <p class="muted">학급 ID는 <code>연도-학년-반</code> 형식(예: 2026-5-6)으로 만들어집니다. 학생 로그인 코드는 자동으로 정해집니다.</p>
+    </div>
+    <div class="card hidden" id="classInfo">
+      <h2>학급 정보</h2>
+      <table>
+        <tr><th style="width:160px">학급</th><td id="ciName"></td></tr>
+        <tr><th>학급 ID</th><td><code id="ciId"></code></td></tr>
+        <tr><th>로그인 코드</th><td><code id="ciCode"></code> <span class="muted">(QR·링크에 들어가는 코드, 학생에게 따로 알려 줄 필요 없음)</span></td></tr>
+        <tr><th>학생 수</th><td id="ciCount"></td></tr>
+        <tr><th>학생 접속 주소</th><td><a id="ciLink" target="_blank"></a></td></tr>
+      </table>
+      <div class="row qrbox"><div id="ciQr"></div><p class="muted">칠판·전자칠판에 띄워 두는 학급 QR입니다.<br>태블릿 카메라로 찍으면 번호 고르기 화면으로 바로 갑니다.<br>처음 한 번 들어온 뒤에는 홈 화면에 추가해 두면 편합니다.</p></div>
+    </div>
+  </section>
+
+  <!-- 학생 계정·모둠 -->
+  <section data-pane="students" class="hidden">
+    <div class="card">
+      <h2>학생 계정 만들기</h2>
+      <div class="row">
+        <label>번호</label><input id="numSpec" value="1-14, 31-40" style="width:220px">
+        <button id="btnCreateStudents">계정 만들기</button>
+        <span class="muted">이미 있는 번호는 건너뜁니다. 24명 기준 1~2분 걸립니다.</span>
+      </div>
+      <div id="createProg" class="muted"></div>
+    </div>
+    <div class="card">
+      <h2>학생 목록</h2>
+      <div class="row noprint">
+        <button id="btnAutoGroup" class="ghost">번호 순서로 6모둠 자동 배정</button>
+        <button id="btnShowPins" class="ghost">PIN 보기</button>
+        <span class="muted">모둠은 칸에서 바로 바꾸면 저장됩니다.</span>
+      </div>
+      <table>
+        <thead><tr><th>번호</th><th>모둠</th><th>PIN</th><th>상태</th><th></th></tr></thead>
+        <tbody id="stuRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 로그인 카드 -->
+  <section data-pane="cards" class="hidden">
+    <div class="card noprint">
+      <h2>로그인 카드 인쇄</h2>
+      <p class="muted">A4 한 장에 8명씩 인쇄됩니다. 학생은 카드의 QR을 찍고 PIN 4자리만 누르면 됩니다.</p>
+      <button id="btnPrint">인쇄하기</button>
+    </div>
+    <div class="card printable"><div id="cards"></div></div>
+  </section>
+
+  <!-- 문항·정답 올리기 -->
+  <section data-pane="data" class="hidden">
+    <div class="card">
+      <h2>현재 Firestore 상태</h2>
+      <div id="dataStatus" class="muted">확인 중…</div>
+      <button id="btnRefreshData" class="ghost" style="margin-top:8px">새로 확인</button>
+    </div>
+    <div class="card">
+      <h2>1. 문항 파일 올리기 (05_question_bank.json)</h2>
+      <p class="muted">학생에게 공개되는 문항입니다(정답 없음).</p>
+      <div class="row"><input type="file" id="f05" accept=".json"><button id="btnUp05">올리기</button></div>
+    </div>
+    <div class="card">
+      <h2>2. 정답 파일 올리기 (06_answer_key_teacher_only.json)</h2>
+      <p class="muted">선생님 컴퓨터에 있는 파일을 골라 Firestore로 바로 올립니다. <b>GitHub에는 올리지 마세요.</b><br>
+        4차시(L04) 6문항은 2026-11-26 승인 내용대로 <span class="pill ok">승인</span> 상태로, 나머지는 <span class="pill">검토 대기</span>로 올라갑니다.</p>
+      <div class="row"><input type="file" id="f06" accept=".json"><button id="btnUp06">올리기</button></div>
+    </div>
+  </section>
+
+  <!-- 채점 규칙 -->
+  <section data-pane="policy" class="hidden">
+    <div class="card">
+      <h2>채점 규칙 (2026-11-26 확정)</h2>
+      <table id="policyTable"></table>
+      <p class="muted">이 규칙은 학급 설정에 저장되어 채점 엔진이 사용합니다. 과제마다 바꾸는 기능은 과제 배정 화면에서 추가됩니다.</p>
+      <button id="btnSavePolicy" class="ghost">학급 설정에 다시 저장</button>
+    </div>
+  </section>
+
+  <div class="card noprint"><h2>기록</h2><div id="log"></div></div>
+</main>
+
+<script type="module">
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, initializeAuth, inMemoryPersistence, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+         createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, writeBatch, serverTimestamp, arrayUnion }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ── 설정 ───────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAMIHxN7imMkZhjX5SEzQ5zwK0DYGw74Ec",
+  authDomain: "mathdata-e79ba.firebaseapp.com",
+  projectId: "mathdata-e79ba",
+  storageBucket: "mathdata-e79ba.firebasestorage.app",
+  messagingSenderId: "561209857926",
+  appId: "1:561209857926:web:b7125a64aefc1c782c7e07"
+};
+const TEACHER_EMAIL = "siun0656@gmail.com";
+const STUDENT_URL = new URL("./", location.href).href;           // 같은 폴더의 index.html(학생 앱)
+const EMAIL_DOMAIN = "mathdata-e79ba.firebaseapp.com";
+const APPROVED_L04 = ["M52U5-WB074-01","M52U5-WB074-02","M52U5-WB075-03","M52U5-WB075-04","M52U5-WB075-05","M52U5-WB075-06"];
+const GRADING_POLICY = {
+  maxAttempts: 3,
+  requireNoteBeforeRetry: true,
+  faceNameRule: "cycle-any-start-any-direction",   // 둘레 순서면 시작점·방향 무관 정답, 순서가 섞이면 교사 확인
+  multiSelectPartialCredit: 0,
+  typoPolicy: "wrong",
+  decidedAt: "2026-11-26"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── 공통 함수 ──────────────────────────────────────────
+const $ = (s) => document.querySelector(s);
+const log = (m) => { const el = $("#log"); el.textContent += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = 1e9; };
+const sid = (n) => "s" + String(n).padStart(2, "0");
+const studentEmail = (classId, n) => `${sid(n)}.c-${classId}@${EMAIL_DOMAIN}`.toLowerCase();
+const studentPw = (code, pin) => `mc-${code}-${pin}`;
+const randPin = () => String(1000 + Math.floor(Math.random() * 9000));
+const randCode = () => { const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)]; return s; };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function parseNums(spec) {
+  const out = new Set();
+  spec.split(/[,\s]+/).filter(Boolean).forEach(p => {
+    const m = p.match(/^(\d+)-(\d+)$/);
+    if (m) { for (let i = +m[1]; i <= +m[2]; i++) out.add(i); } else if (/^\d+$/.test(p)) out.add(+p);
+  });
+  return [...out].filter(n => n >= 1 && n <= 99).sort((a, b) => a - b);
+}
+function rangesOf(nums) {           // [1,2,3,31,32] → "1-3,31-32"
+  const r = []; let s = null, p = null;
+  for (const n of nums) { if (s === null) { s = p = n; } else if (n === p + 1) { p = n; } else { r.push(s === p ? `${s}` : `${s}-${p}`); s = p = n; } }
+  if (s !== null) r.push(s === p ? `${s}` : `${s}-${p}`);
+  return r.join(",");
+}
+function qrImg(text, cell = 4) { const q = qrcode(0, "M"); q.addData(text); q.make(); return q.createImgTag(cell, 8); }
+function secondaryAuth(tag) {
+  const a2 = initializeApp(firebaseConfig, tag + "-" + Date.now());
+  return { app2: a2, auth2: initializeAuth(a2, { persistence: inMemoryPersistence }) };   // 교사 브라우저에 학생 로그인 흔적을 남기지 않음
+}
+
+// ── 상태 ───────────────────────────────────────────────
+let me = null, classIds = [], cls = null, students = [], pins = {}, showPins = false;
+
+// ── 로그인 ─────────────────────────────────────────────
+$("#btnLogin").onclick = async () => {
+  $("#loginMsg").textContent = "";
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { $("#loginMsg").textContent = "로그인 실패: " + e.code; }
+};
+$("#btnLogout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async (u) => {
+  me = u;
+  if (!u) { $("#vLogin").classList.remove("hidden"); $("#vApp").classList.add("hidden"); $("#btnLogout").classList.add("hidden"); $("#who").textContent = ""; $("#classSel").classList.add("hidden"); return; }
+  $("#who").textContent = u.email || "(학생 계정)";
+  $("#btnLogout").classList.remove("hidden");
+  if (u.email !== TEACHER_EMAIL) {
+    $("#vLogin").classList.remove("hidden"); $("#vApp").classList.add("hidden");
+    $("#loginMsg").textContent = "교사로 지정된 계정이 아닙니다. 로그아웃 후 교사 계정으로 로그인하세요.";
+    return;
+  }
+  $("#vLogin").classList.add("hidden"); $("#vApp").classList.remove("hidden");
+  try {
+    const ref = doc(db, "users", u.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) await setDoc(ref, { role: "teacher", email: u.email, classIds: [], createdAt: serverTimestamp() });
+    classIds = (snap.exists() && snap.data().classIds) || [];
+    await loadClassList();
+    refreshDataStatus();
+  } catch (e) { log("프로필 확인 실패: " + e.code); }
+});
+
+// ── 탭 ─────────────────────────────────────────────────
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("[data-pane]").forEach(p => p.classList.toggle("hidden", p.dataset.pane !== b.dataset.tab));
+  if (b.dataset.tab === "cards") renderCards();
+  if (b.dataset.tab === "data") refreshDataStatus();
+});
+
+// ── 학급 ───────────────────────────────────────────────
+async function loadClassList() {
+  const sel = $("#classSel"); sel.innerHTML = "";
+  for (const id of classIds) { const o = document.createElement("option"); o.value = id; o.textContent = id; sel.appendChild(o); }
+  sel.classList.toggle("hidden", classIds.length === 0);
+  const last = localStorage.getItem("cc.teacher.class");
+  if (classIds.length) { sel.value = classIds.includes(last) ? last : classIds[0]; await openClass(sel.value); }
+  else { cls = null; renderClassInfo(); }
+}
+$("#classSel").onchange = (e) => openClass(e.target.value);
+
+async function openClass(id) {
+  try {
+    const snap = await getDoc(doc(db, "classes", id));
+    cls = { id, ...snap.data() };
+    localStorage.setItem("cc.teacher.class", id);
+    const ps = await getDoc(doc(db, "classes", id, "private", "pins"));
+    pins = ps.exists() ? ps.data() : {};
+    await loadStudents();
+    renderClassInfo();
+  } catch (e) { log("학급 열기 실패: " + e.code); }
+}
+
+$("#btnCreateClass").onclick = async () => {
+  const y = +$("#ncYear").value, g = +$("#ncGrade").value, c = +$("#ncClass").value;
+  if (!y || !g || !c) return alert("연도·학년·반을 모두 입력하세요.");
+  const id = `${y}-${g}-${c}`;
+  if (classIds.includes(id)) return alert("이미 있는 학급입니다.");
+  try {
+    await setDoc(doc(db, "classes", id), {
+      teacherUid: me.uid, name: `${y}학년도 ${g}학년 ${c}반`, year: y, grade: g, classNo: c,
+      joinCode: randCode(), groups: ["1모둠","2모둠","3모둠","4모둠","5모둠","6모둠"],
+      settings: { grading: GRADING_POLICY }, createdAt: serverTimestamp()
+    });
+    await updateDoc(doc(db, "users", me.uid), { classIds: arrayUnion(id) });
+    classIds.push(id); log(`학급 ${id} 만들기 완료`);
+    await loadClassList(); $("#classSel").value = id; await openClass(id);
+  } catch (e) { log("학급 만들기 실패: " + e.code); alert("학급 만들기 실패: " + e.code); }
+};
+
+function studentLink(n) {
+  const nums = students.map(s => s.studentNo);
+  const p = new URLSearchParams({ c: cls.id, k: cls.joinCode, r: rangesOf(nums.length ? nums : parseNums("1-14,31-40")) });
+  if (n) p.set("n", n);
+  return STUDENT_URL + "?" + p.toString();
+}
+function renderClassInfo() {
+  // 새 학급 카드는 늘 보임(학급 여러 개 지원)
+  $("#classInfo").classList.toggle("hidden", !cls);
+  if (!cls) return;
+  $("#ciName").textContent = cls.name; $("#ciId").textContent = cls.id; $("#ciCode").textContent = cls.joinCode;
+  $("#ciCount").textContent = students.length + "명";
+  const link = studentLink(); $("#ciLink").href = link; $("#ciLink").textContent = link;
+  $("#ciQr").innerHTML = qrImg(link, 5);
+}
+
+// ── 학생 ───────────────────────────────────────────────
+async function loadStudents() {
+  const qs = await getDocs(collection(db, "classes", cls.id, "students"));
+  students = qs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.studentNo - b.studentNo);
+  renderStudents();
+}
+function renderStudents() {
+  const tb = $("#stuRows"); tb.innerHTML = "";
+  if (!cls) { tb.innerHTML = `<tr><td colspan="5" class="muted">먼저 학급을 만드세요.</td></tr>`; return; }
+  if (!students.length) { tb.innerHTML = `<tr><td colspan="5" class="muted">아직 학생 계정이 없습니다.</td></tr>`; return; }
+  for (const s of students) {
+    const tr = document.createElement("tr");
+    const opts = ["", ...(cls.groups || [])].map(g => `<option ${g === s.group ? "selected" : ""} value="${g}">${g || "–"}</option>`).join("");
+    tr.innerHTML = `<td><b>${s.studentNo}번</b></td>
+      <td><select data-g="${s.id}">${opts}</select></td>
+      <td>${showPins ? (pins[s.id] || "?") : "••••"}</td>
+      <td>${s.active ? '<span class="pill ok">사용 중</span>' : '<span class="pill bad">정지</span>'}</td>
+      <td><button class="ghost" data-reset="${s.id}">PIN 재설정</button> <button class="${s.active ? "danger" : "ghost"}" data-act="${s.id}">${s.active ? "정지" : "재개"}</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll("[data-g]").forEach(el => el.onchange = () => setGroup(el.dataset.g, el.value));
+  tb.querySelectorAll("[data-reset]").forEach(el => el.onclick = () => resetPin(el.dataset.reset));
+  tb.querySelectorAll("[data-act]").forEach(el => el.onclick = () => toggleActive(el.dataset.act));
+}
+$("#btnShowPins").onclick = () => { showPins = !showPins; $("#btnShowPins").textContent = showPins ? "PIN 숨기기" : "PIN 보기"; renderStudents(); };
+
+$("#btnCreateStudents").onclick = async () => {
+  if (!cls) return alert("먼저 학급을 만드세요.");
+  const nums = parseNums($("#numSpec").value);
+  if (!nums.length) return alert("번호를 입력하세요. 예: 1-14, 31-40");
+  const existing = new Set(students.map(s => s.id));
+  const todo = nums.filter(n => !existing.has(sid(n)));
+  if (!todo.length) return alert("입력한 번호의 계정이 모두 이미 있습니다.");
+  if (!confirm(`${todo.length}명의 계정을 만듭니다. (${todo.join(", ")})`)) return;
+  $("#btnCreateStudents").disabled = true;
+  const { app2, auth2 } = secondaryAuth("creator");
+  const pinsRef = doc(db, "classes", cls.id, "private", "pins");
+  let ok = 0, fail = 0;
+  for (const n of todo) {
+    const s = sid(n), email = studentEmail(cls.id, n);
+    const pin = pins[s] || randPin();
+    $("#createProg").textContent = `${n}번 만드는 중… (${ok + fail + 1}/${todo.length})`;
+    let uid = null;
+    for (let tryNo = 0; tryNo < 3 && !uid; tryNo++) {
+      try { uid = (await createUserWithEmailAndPassword(auth2, email, studentPw(cls.joinCode, pin))).user.uid; }
+      catch (e) {
+        if (e.code === "auth/email-already-in-use") {
+          try { uid = (await signInWithEmailAndPassword(auth2, email, studentPw(cls.joinCode, pin))).user.uid; log(`${n}번: 기존 로그인 계정을 다시 연결`); }
+          catch (e2) { log(`${n}번: 이미 계정이 있는데 PIN을 몰라 연결 실패(${e2.code}) – 콘솔 Authentication에서 ${email} 삭제 후 다시 시도`); break; }
+        } else if (e.code === "auth/too-many-requests" || e.code === "auth/network-request-failed") { log(`${n}번: ${e.code} – 5초 후 다시 시도`); await sleep(5000); }
+        else { log(`${n}번 실패: ${e.code}`); break; }
+      }
+    }
+    try { await signOut(auth2); } catch (_) {}
+    if (!uid) { fail++; continue; }
+    try {
+      const b = writeBatch(db);
+      b.set(doc(db, "users", uid), { role: "student", classId: cls.id, studentId: s, studentNo: n, active: true, createdAt: serverTimestamp() });
+      b.set(doc(db, "classes", cls.id, "students", s), { studentNo: n, nickname: `${n}번`, group: "", authUid: uid, active: true, createdAt: serverTimestamp() });
+      b.set(pinsRef, { [s]: pin }, { merge: true });
+      await b.commit();
+      pins[s] = pin; ok++;
+    } catch (e) { fail++; log(`${n}번 문서 저장 실패: ${e.code}`); }
+    await sleep(300);
+  }
+  try { await deleteApp(app2); } catch (_) {}
+  $("#createProg").innerHTML = `<span class="ok">완료: ${ok}명 생성</span>${fail ? ` · <span class="bad">실패 ${fail}명(기록 확인)</span>` : ""}`;
+  log(`학생 계정 생성 완료 – 성공 ${ok}, 실패 ${fail}`);
+  $("#btnCreateStudents").disabled = false;
+  await loadStudents(); renderClassInfo();
+};
+
+async function setGroup(s, g) {
+  try { await updateDoc(doc(db, "classes", cls.id, "students", s), { group: g }); const st = students.find(x => x.id === s); if (st) st.group = g; log(`${s.replace("s","").replace(/^0/,"")}번 → ${g || "모둠 없음"}`); }
+  catch (e) { log("모둠 저장 실패: " + e.code); }
+}
+$("#btnAutoGroup").onclick = async () => {
+  if (!students.length) return;
+  if (!confirm("번호 순서대로 4명씩 1~6모둠에 배정합니다. 기존 모둠은 바뀝니다.")) return;
+  const b = writeBatch(db);
+  students.forEach((s, i) => { s.group = (cls.groups || [])[Math.min(Math.floor(i / 4), 5)] || ""; b.update(doc(db, "classes", cls.id, "students", s.id), { group: s.group }); });
+  try { await b.commit(); log("모둠 자동 배정 완료"); renderStudents(); } catch (e) { log("모둠 자동 배정 실패: " + e.code); }
+};
+
+async function resetPin(s) {
+  const st = students.find(x => x.id === s); if (!st) return;
+  const old = pins[s]; if (!old) return alert("이전 PIN 기록이 없어 재설정할 수 없습니다. 콘솔에서 계정을 지운 뒤 다시 만들어 주세요.");
+  const nw = randPin();
+  if (!confirm(`${st.studentNo}번 PIN을 새로 만듭니다. (새 PIN: ${nw})`)) return;
+  const { app2, auth2 } = secondaryAuth("reset");
+  try {
+    const cred = await signInWithEmailAndPassword(auth2, studentEmail(cls.id, st.studentNo), studentPw(cls.joinCode, old));
+    await updatePassword(cred.user, studentPw(cls.joinCode, nw));
+    await setDoc(doc(db, "classes", cls.id, "private", "pins"), { [s]: nw }, { merge: true });
+    await addDoc(collection(db, "classes", cls.id, "auditLogs"), { type: "pinReset", studentId: s, by: me.email, at: serverTimestamp() });
+    pins[s] = nw; renderStudents(); log(`${st.studentNo}번 PIN 재설정 완료`); alert(`${st.studentNo}번 새 PIN: ${nw}`);
+  } catch (e) { log(`${st.studentNo}번 PIN 재설정 실패: ${e.code}`); alert("PIN 재설정 실패: " + e.code); }
+  finally { try { await signOut(auth2); await deleteApp(app2); } catch (_) {} }
+}
+async function toggleActive(s) {
+  const st = students.find(x => x.id === s); if (!st) return;
+  const next = !st.active;
+  try {
+    const b = writeBatch(db);
+    b.update(doc(db, "users", st.authUid), { active: next });
+    b.update(doc(db, "classes", cls.id, "students", s), { active: next });
+    b.set(doc(collection(db, "classes", cls.id, "auditLogs")), { type: next ? "activate" : "deactivate", studentId: s, by: me.email, at: serverTimestamp() });
+    await b.commit(); st.active = next; renderStudents(); log(`${st.studentNo}번 ${next ? "재개" : "정지"}`);
+  } catch (e) { log("상태 변경 실패: " + e.code); }
+}
+
+// ── 로그인 카드 ─────────────────────────────────────────
+function renderCards() {
+  const box = $("#cards"); box.innerHTML = "";
+  if (!cls || !students.length) { box.innerHTML = `<p class="muted">학생 계정을 먼저 만드세요.</p>`; return; }
+  for (const s of students) {
+    const d = document.createElement("div"); d.className = "lc";
+    d.innerHTML = `${qrImg(studentLink(s.studentNo), 4)}
+      <div><div class="t">CUBIC CITY · ${cls.grade}학년 ${cls.classNo}반</div>
+      <div class="no">${s.studentNo}번</div>
+      <div class="t" style="margin-top:6px">PIN</div><div class="pin">${pins[s.id] || "????"}</div>
+      <div class="t">QR을 찍고 PIN을 눌러요</div></div>`;
+    box.appendChild(d);
+  }
+}
+$("#btnPrint").onclick = () => { renderCards(); window.print(); };
+
+// ── 문항·정답 올리기 ─────────────────────────────────────
+async function readJsonFile(input) {
+  const f = input.files[0]; if (!f) throw new Error("파일을 먼저 고르세요.");
+  return JSON.parse(await f.text());
+}
+async function commitInChunks(ops) {   // ops: [ref, data]
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = writeBatch(db); ops.slice(i, i + 400).forEach(([r, d]) => b.set(r, d)); await b.commit();
+  }
+}
+$("#btnUp05").onclick = async () => {
+  try {
+    const j = await readJsonFile($("#f05"));
+    if (j?.meta?.unitId !== "M52-U5" || !Array.isArray(j.questions)) throw new Error("05_question_bank.json 형식이 아닙니다.");
+    if (JSON.stringify(j).includes('"correctAnswer"')) throw new Error("정답이 들어 있는 파일입니다. 05 파일을 고르세요.");
+    const ops = j.questions.map(q => [doc(db, "questions", q.questionId), { ...q, uploadedAt: serverTimestamp() }]);
+    for (const [L, v] of Object.entries(j.meta.lessons || {})) {
+      ops.push([doc(db, "lessons", L), { lessonId: L, unit: j.meta.unitId, title: v.title, textbookPages: v.textbookPages, workbookPages: v.workbookPages,
+        questionIds: j.questions.filter(q => q.lesson === L).map(q => q.questionId), published: L === "L04", uploadedAt: serverTimestamp() }]);
+    }
+    await commitInChunks(ops);
+    log(`문항 ${j.questions.length}개, 차시 ${Object.keys(j.meta.lessons || {}).length}개 올리기 완료`); alert("문항 올리기 완료"); refreshDataStatus();
+  } catch (e) { log("문항 올리기 실패: " + (e.code || e.message)); alert("실패: " + (e.code || e.message)); }
+};
+$("#btnUp06").onclick = async () => {
+  try {
+    const j = await readJsonFile($("#f06"));
+    if (!String(j?.meta?.confidentiality || "").startsWith("TEACHER_ONLY") || !Array.isArray(j.answerKeys)) throw new Error("06_answer_key_teacher_only.json 형식이 아닙니다.");
+    const ops = j.answerKeys.map(k0 => {
+      // Firestore는 '배열 안의 배열'을 저장할 수 없어(예: faceSizes [[2,6],…]) 정답·허용 답안은 JSON 문자열로 저장한다.
+      // 채점 엔진: JSON.parse(answerJson) → { correctAnswer, acceptedAnswers }
+      const { correctAnswer, acceptedAnswers, ...k } = k0;
+      k.answerJson = JSON.stringify({ correctAnswer, acceptedAnswers });
+      const approved = APPROVED_L04.includes(k.questionId);
+      return [doc(db, "answerKeys", k.questionId), { ...k, version: 1,
+        answerKeyStatus: approved ? "approved" : k.answerKeyStatus,
+        ...(approved ? { approvedBy: me.email, approvedAt: "2026-11-26", approvalNote: "교사 채팅 승인(13 문서 7장)" } : {}),
+        uploadedAt: serverTimestamp() }];
+    });
+    await commitInChunks(ops);
+    log(`정답 키 ${j.answerKeys.length}개 올리기 완료 (L04 승인 ${APPROVED_L04.length}개)`); alert("정답 올리기 완료"); refreshDataStatus();
+  } catch (e) { log("정답 올리기 실패: " + (e.code || e.message)); alert("실패: " + (e.code || e.message)); }
+};
+async function refreshDataStatus() {
+  try {
+    const [qs, ks, ls] = await Promise.all([getDocs(collection(db, "questions")), getDocs(collection(db, "answerKeys")), getDocs(collection(db, "lessons"))]);
+    const approved = ks.docs.filter(d => d.data().answerKeyStatus === "approved").length;
+    const l04 = ls.docs.find(d => d.id === "L04");
+    $("#dataStatus").innerHTML = `문항 <b>${qs.size}</b>개 · 차시 <b>${ls.size}</b>개 · 정답 키 <b>${ks.size}</b>개 (승인 <b>${approved}</b> / 검토 대기 ${ks.size - approved})` +
+      (l04 ? `<br>4차시: ${l04.data().title} – 문항 ${l04.data().questionIds.length}개` : "") +
+      (qs.size === 41 && ks.size >= 41 ? ` <span class="ok">✓ 준비 완료</span>` : "");
+  } catch (e) { $("#dataStatus").textContent = "확인 실패: " + e.code; }
+}
+$("#btnRefreshData").onclick = refreshDataStatus;
+
+// ── 채점 규칙 ──────────────────────────────────────────
+const POLICY_ROWS = [
+  ["한 문제 최대 시도", "3번"],
+  ["재도전 조건", "틀리면 오답노트(①틀린 이유, ③올바른 방법)를 써야 재도전"],
+  ["면 이름", "꼭짓점을 둘레 순서로 읽으면 시작점·방향과 관계없이 정답 (예: ㄱㄴㅂㅁ = ㄴㅂㅁㄱ = ㅁㅂㄴㄱ). 순서가 섞이면(ㄱㅂㄴㅁ) 교사 확인"],
+  ["복수 선택", "정답 집합과 완전히 같아야 점수, 일부만 맞으면 0점 + 피드백"],
+  ["오탈자", "오답 처리, 교사 화면에 '오탈자' 표시"],
+  ["띄어쓰기·끝말", "무시 (평 행 / 평행하 → 평행)"],
+  ["4차시 정답 키", "6문항 승인(2026-11-26)"],
+];
+$("#policyTable").innerHTML = POLICY_ROWS.map(([a, b]) => `<tr><th style="width:170px">${a}</th><td>${b}</td></tr>`).join("");
+$("#btnSavePolicy").onclick = async () => {
+  if (!cls) return alert("학급을 먼저 만드세요.");
+  try { await updateDoc(doc(db, "classes", cls.id), { "settings.grading": GRADING_POLICY }); log("채점 규칙 저장 완료"); alert("저장했습니다."); }
+  catch (e) { log("채점 규칙 저장 실패: " + e.code); }
+};
+</script>
+</body>
+</html>
