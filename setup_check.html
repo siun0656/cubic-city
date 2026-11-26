@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUBIC CITY – Firebase 설정 점검</title>
+<style>
+  body { font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif; max-width: 880px; margin: 32px auto; padding: 0 20px; color: #1d2433; background: #f6f7fb; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  .sub { color: #5b6478; margin-top: 0; }
+  .card { background: #fff; border-radius: 14px; padding: 18px 22px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  button { font-size: 16px; padding: 10px 18px; border-radius: 10px; border: 0; background: #2f5bea; color: #fff; cursor: pointer; margin-right: 8px; }
+  button.gray { background: #6b7280; }
+  button:disabled { background: #b8c0d4; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eceef3; vertical-align: top; }
+  .ok { color: #0a7f3f; font-weight: 700; }
+  .bad { color: #c62828; font-weight: 700; }
+  .wait { color: #8a93a6; }
+  code { background: #eef1f8; padding: 1px 5px; border-radius: 4px; }
+  #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: #5b6478; max-height: 200px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>CUBIC CITY – Firebase 설정 점검</h1>
+<p class="sub">프로젝트 <code>mathdata-e79ba</code> · 교사 계정으로 로그인하면 보안 규칙을 실제 프로젝트에서 자동으로 시험합니다.</p>
+
+<div class="card">
+  <b>1단계. 교사 로그인</b>
+  <p id="who" class="wait">로그인 전</p>
+  <button id="btnLogin">Google로 로그인</button>
+  <button id="btnLogout" class="gray" disabled>로그아웃</button>
+</div>
+
+<div class="card">
+  <b>2단계. 자동 점검 실행</b>
+  <p class="wait">시험용 학급 <code>TEST</code>와 시험 학생 계정 1개를 만들어 규칙이 의도대로 막고 허용하는지 확인합니다. (약 10초)</p>
+  <button id="btnRun" disabled>점검 실행</button>
+  <button id="btnClean" class="gray" disabled>시험 데이터 정리</button>
+  <table>
+    <thead><tr><th style="width:52px">번호</th><th>점검 내용</th><th style="width:90px">기대</th><th style="width:110px">결과</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p id="summary"></p>
+</div>
+
+<div class="card">
+  <b>기록</b>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+         createUserWithEmailAndPassword, signInWithEmailAndPassword, deleteUser }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// 학생 데이터 보호를 위해 Analytics(getAnalytics)는 쓰지 않습니다.
+const firebaseConfig = {
+  apiKey: "AIzaSyAMIHxN7imMkZhjX5SEzQ5zwK0DYGw74Ec",
+  authDomain: "mathdata-e79ba.firebaseapp.com",
+  projectId: "mathdata-e79ba",
+  storageBucket: "mathdata-e79ba.firebasestorage.app",
+  messagingSenderId: "561209857926",
+  appId: "1:561209857926:web:b7125a64aefc1c782c7e07"
+};
+const TEACHER_EMAIL = "siun0656@gmail.com";
+const CLASS_ID = "TEST";
+const TEST_STUDENT = { id: "s99", email: "test-s99.class-test@mathdata-e79ba.firebaseapp.com", password: "test-9999-mathcity" };
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = (id) => document.getElementById(id);
+const log = (m) => { $("log").textContent += m + "\n"; $("log").scrollTop = 1e9; };
+
+onAuthStateChanged(auth, (u) => {
+  if (u) {
+    const isT = u.email === TEACHER_EMAIL;
+    $("who").innerHTML = `${u.email} ${isT ? '<span class="ok">✓ 교사 계정</span>' : '<span class="bad">✗ 교사로 지정된 계정이 아닙니다</span>'}`;
+    $("btnRun").disabled = !isT; $("btnClean").disabled = !isT; $("btnLogout").disabled = false; $("btnLogin").disabled = true;
+  } else {
+    $("who").textContent = "로그인 전"; $("btnRun").disabled = true; $("btnClean").disabled = true;
+    $("btnLogout").disabled = true; $("btnLogin").disabled = false;
+  }
+});
+$("btnLogin").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) {
+    log("로그인 실패: " + e.code);
+    if (e.code === "auth/unauthorized-domain")
+      alert("이 주소가 Firebase에 등록되어 있지 않습니다.\nAuthentication → 설정 → 승인된 도메인에 지금 주소(" + location.hostname + ")를 추가해 주세요.");
+  }
+};
+$("btnLogout").onclick = () => signOut(auth);
+
+// 점검 항목 정의: expect = "허용" | "거부"
+async function attempt(fn) {
+  try { await fn(); return "허용"; }
+  catch (e) { if (e.code === "permission-denied") return "거부"; return "오류(" + e.code + ")"; }
+}
+function addRow(no, text, expect) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${no}</td><td>${text}</td><td>${expect}</td><td class="wait" id="r${no}">…</td>`;
+  $("rows").appendChild(tr);
+}
+function setRow(no, got, expect) {
+  const ok = got === expect;
+  const el = $("r" + no); el.textContent = (ok ? "✅ " : "❌ ") + got; el.className = ok ? "ok" : "bad";
+  return ok;
+}
+
+async function getStudentSession() {
+  const app2 = initializeApp(firebaseConfig, "student-" + Date.now());
+  const auth2 = getAuth(app2);
+  let cred;
+  try { cred = await createUserWithEmailAndPassword(auth2, TEST_STUDENT.email, TEST_STUDENT.password); log("시험 학생 계정 생성"); }
+  catch (e) {
+    if (e.code === "auth/email-already-in-use") { cred = await signInWithEmailAndPassword(auth2, TEST_STUDENT.email, TEST_STUDENT.password); log("기존 시험 학생 계정으로 로그인"); }
+    else throw e;
+  }
+  return { app2, auth2, db2: getFirestore(app2), uid: cred.user.uid };
+}
+
+$("btnRun").onclick = async () => {
+  $("rows").innerHTML = ""; $("summary").textContent = ""; $("btnRun").disabled = true;
+  const T = auth.currentUser;
+  const checks = [];
+  const run = async (no, text, expect, fn) => { addRow(no, text, expect); const got = await attempt(fn); checks.push(setRow(no, got, expect)); log(`${no} ${text}: ${got}`); };
+  let S;
+  try {
+    // ── 교사 쪽 준비 ──
+    await run(1, "교사: 자기 프로필(users) 만들기", "허용", () => setDoc(doc(db, "users", T.uid), { role: "teacher", email: T.email, createdAt: serverTimestamp() }, { merge: true }));
+    await run(2, "교사: 점검용 문서 쓰기·읽기", "허용", async () => { await setDoc(doc(db, "_setup", "ping"), { at: serverTimestamp() }); await getDoc(doc(db, "_setup", "ping")); });
+    await run(3, "교사: 시험 학급 TEST 만들기", "허용", () => setDoc(doc(db, "classes", CLASS_ID), { teacherUid: T.uid, name: "점검용 학급", createdAt: serverTimestamp() }, { merge: true }));
+    await run(4, "교사: 시험 정답 키 쓰기", "허용", () => setDoc(doc(db, "answerKeys", "TEST-Q"), { correctAnswer: { a: 38 }, note: "점검용" }));
+    await run(5, "교사: PIN 보관 문서 쓰기", "허용", () => setDoc(doc(db, "classes", CLASS_ID, "private", "pins"), { s99: "9999" }));
+
+    // ── 시험 학생 계정 ──
+    S = await getStudentSession();
+    await run(6, "교사: 학생 프로필(users) 만들기", "허용", () => setDoc(doc(db, "users", S.uid), { role: "student", classId: CLASS_ID, studentId: TEST_STUDENT.id, active: true }));
+    await run(7, "교사: 학생 명단 문서 만들기", "허용", () => setDoc(doc(db, "classes", CLASS_ID, "students", TEST_STUDENT.id), { studentNo: 99, nickname: "시험", group: "1모둠", authUid: S.uid, active: true }));
+
+    const d2 = S.db2;
+    // ── 학생이 할 수 없어야 하는 것 ──
+    await run(8,  "학생: 정답 키 읽기", "거부", () => getDoc(doc(d2, "answerKeys", "TEST-Q")));
+    await run(9,  "학생: PIN 보관 문서 읽기", "거부", () => getDoc(doc(d2, "classes", CLASS_ID, "private", "pins")));
+    await run(10, "학생: 문항(questions) 쓰기", "거부", () => setDoc(doc(d2, "questions", "HACK"), { x: 1 }));
+    await run(11, "학생: 점수 필드를 넣어 제출(점수 조작)", "거부", () => setDoc(doc(d2, "classes", CLASS_ID, "submissions", "hack-" + Date.now()),
+      { studentId: "s99", questionId: "TEST-Q", status: "submitted", submittedAt: serverTimestamp(), autoScore: 100 }));
+    await run(12, "학생: 다른 학생 번호로 제출", "거부", () => setDoc(doc(d2, "classes", CLASS_ID, "submissions", "fake-" + Date.now()),
+      { studentId: "s01", questionId: "TEST-Q", status: "submitted", submittedAt: serverTimestamp(), rawAnswers: {} }));
+    await run(13, "학생: 자기 프로필을 교사로 바꾸기", "거부", () => updateDoc(doc(d2, "users", S.uid), { role: "teacher" }));
+    await run(14, "학생: 진행 기록에 익힘 점수 쓰기", "거부", () => setDoc(doc(d2, "classes", CLASS_ID, "progress", "s99_TEST-A"),
+      { studentId: "s99", assignmentId: "TEST-A", workbook: { scoreFinal: 14 } }));
+
+    // ── 학생이 할 수 있어야 하는 것 ──
+    const subId = "ok-" + Date.now();
+    await run(15, "학생: 자기 프로필 읽기", "허용", () => getDoc(doc(d2, "users", S.uid)));
+    await run(16, "학생: 문항(questions) 읽기", "허용", () => getDoc(doc(d2, "questions", "M52U5-WB075-05")));
+    await run(17, "학생: 정상 답안 제출", "허용", () => setDoc(doc(d2, "classes", CLASS_ID, "submissions", subId),
+      { studentId: "s99", assignmentId: "TEST-A", questionId: "TEST-Q", lessonId: "L04", attemptNo: 1, isRetry: false,
+        rawAnswers: { a: "38" }, startedAt: Date.now() - 30000, durationMs: 30000, submittedAt: serverTimestamp(), status: "submitted", clientVersion: "check" }));
+    await run(18, "학생: 제출한 답안 고치기", "거부", () => updateDoc(doc(d2, "classes", CLASS_ID, "submissions", subId), { rawAnswers: { a: "39" } }));
+    await run(19, "학생: 진행 기록(스토리) 쓰기", "허용", () => setDoc(doc(d2, "classes", CLASS_ID, "progress", "s99_TEST-A"),
+      { studentId: "s99", assignmentId: "TEST-A", story: { viewed: [1, 2] }, updatedAt: serverTimestamp() }));
+    await run(20, "교사(채점 엔진): 제출에 채점 결과 기록", "허용", () => updateDoc(doc(db, "classes", CLASS_ID, "submissions", subId),
+      { status: "graded", partResults: { a: { correct: true, score: 1 } } }));
+    await run(21, "학생: 손글씨 획 데이터 저장", "허용", () => setDoc(doc(d2, "classes", CLASS_ID, "handwriting", "hw-" + Date.now()),
+      { studentId: "s99", noteId: "s99_TEST-Q", seq: 1, strokes: "[[1,2,3]]", width: 800, height: 500, background: "blank", createdAt: serverTimestamp() }));
+
+    const okCount = checks.filter(Boolean).length;
+    $("summary").innerHTML = okCount === checks.length
+      ? `<span class="ok">모든 점검 통과 (${okCount}/${checks.length}) – 보안 규칙이 의도대로 동작합니다.</span>`
+      : `<span class="bad">${checks.length - okCount}개 항목이 기대와 다릅니다. 이 화면을 캡처해서 보내 주세요.</span>`;
+  } catch (e) {
+    log("점검 중단: " + (e.code || e.message));
+    $("summary").innerHTML = `<span class="bad">점검이 중단되었습니다: ${e.code || e.message}</span>`;
+    if (e.code === "auth/operation-not-allowed") alert("Authentication → 로그인 방법에서 '이메일/비밀번호'를 켜 주세요.");
+  } finally {
+    if (S) { await signOut(S.auth2); await deleteApp(S.app2); }
+    $("btnRun").disabled = false;
+  }
+};
+
+$("btnClean").onclick = async () => {
+  try {
+    const S = await getStudentSession();
+    await deleteUser(S.auth2.currentUser); await deleteApp(S.app2);
+    await deleteDoc(doc(db, "users", S.uid));
+    await deleteDoc(doc(db, "classes", CLASS_ID, "students", TEST_STUDENT.id));
+    await deleteDoc(doc(db, "classes", CLASS_ID, "private", "pins"));
+    await deleteDoc(doc(db, "answerKeys", "TEST-Q"));
+    await deleteDoc(doc(db, "_setup", "ping"));
+    log("시험 학생 계정과 주요 시험 문서를 정리했습니다. (제출·손글씨 기록은 삭제 금지 규칙이라 TEST 학급에 남습니다)");
+    alert("정리했습니다.");
+  } catch (e) { log("정리 실패: " + (e.code || e.message)); }
+};
+</script>
+</body>
+</html>
