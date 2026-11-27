@@ -153,7 +153,7 @@
         <button id="btnCreateAsg">과제 만들고 열기</button>
       </div>
       <p class="muted">시범 차시는 4차시(L04)입니다. 과제를 열면 학생 홈의 '오늘의 과제'와 MATH WORKBOOK에 바로 나타납니다.<br>
-      채점 규칙: 한 문제 3번까지 · 틀리면 오답노트 제출 후 재도전 · 면 이름은 둘레 순서면 정답.</p>
+      채점 규칙: 한 문제 3번까지 · 1번 틀리면 바로 다시 · 2번 틀리면 오답노트 제출 후 마지막 도전 · 면 이름은 둘레 순서면 정답.</p>
     </div>
     <div class="card">
       <h2>과제 목록</h2>
@@ -243,6 +243,7 @@ const APPROVED_L04 = ["M52U5-WB074-01","M52U5-WB074-02","M52U5-WB075-03","M52U5-
 const GRADING_POLICY = {
   maxAttempts: 3,
   requireNoteBeforeRetry: true,
+  noteRequiredAfterWrong: 2,                       // 2번 틀리면 오답노트 제출 후 마지막 도전(2026-11-27 교사 결정)
   faceNameRule: "cycle-any-start-any-direction",   // 둘레 순서면 시작점·방향 무관 정답, 순서가 섞이면 교사 확인
   multiSelectPartialCredit: 0,
   typoPolicy: "wrong",
@@ -585,8 +586,17 @@ function gIsCycle(l) { const a = [...l]; return a.length === 4 && a.every((ch, i
 function gSetKey(arr) { return [...new Set(arr.map(gBase))].sort().join("|"); }
 function gFaceKey(s) { return [...gFaceLetters(s)].sort().join(""); }
 
+const KEYWORDS = {   // 서술형: 핵심어가 있으면 '정답 후보'로만 표시(점수는 교사가 결정)
+  "M52U5-WB071-06:a": [["사다리꼴"], ["직사각형", "아니"], ["직사각형", "아닌"], ["직사각형", "않"], ["직사각형", "없"]],
+  "M52U5-WB071-07:b": [["정육면체는", "직육면체"], ["직육면체는", "정육면체", "없"]],
+  "M52U5-WB077-04:b": [["겹"]],
+  "M52U5-TB131-06:b": [["보이지", "실선"], ["보이지", "점선"]]
+};
+const DRAWING_RULES = new Set(["edge_set_with_style", "net_fold_check", "net_fold_check_distinct"]);
+function gStrip(s, word) { const t = gBase(s); return t.startsWith(word) ? t.slice(word.length) : t; }
+
 // 반환: { verdict: "correct"|"wrong"|"review"|"blank", reason }
-function gradePart(rule, student, answer, accepted = []) {
+function gradePart(rule, student, answer, accepted = [], keyId = "") {
   const empty = student == null || (typeof student === "string" && student.trim() === "") || (Array.isArray(student) && student.length === 0);
   if (empty && !(Array.isArray(answer) && answer.length === 0)) return { verdict: "blank", reason: "무응답" };
   switch (rule) {
@@ -615,6 +625,24 @@ function gradePart(rule, student, answer, accepted = []) {
       if (gIsCycle(st)) return { verdict: "correct", reason: "둘레 순서(시작점·방향 무관)" };
       return { verdict: "review", reason: "글자는 맞지만 둘레 순서 아님" };
     }
+    case "point_name": {
+      const c = [answer, ...accepted].map(a => gStrip(a, "점"));
+      return c.includes(gStrip(student, "점")) ? { verdict: "correct", reason: "일치" } : { verdict: "wrong", reason: "다른 점" };
+    }
+    case "segment_unordered": {
+      const st = [...gStrip(student, "선분")];
+      if (st.length !== 2) return { verdict: "wrong", reason: "글자 수 오류" };
+      const key = st.slice().sort().join("");
+      const c = [answer, ...accepted].map(a => [...gStrip(a, "선분")].sort().join(""));
+      return c.includes(key) ? { verdict: "correct", reason: "두 끝점 일치(순서 무관)" } : { verdict: "wrong", reason: "다른 선분" };
+    }
+    case "keyword_assist": {
+      const t = gBase(student);
+      const hit = (KEYWORDS[keyId] || []).some(g => g.every(w => t.includes(w)));
+      return { verdict: "review", reason: hit ? "핵심어 있음(정답 후보)" : "핵심어 없음" };
+    }
+    case "edge_set_with_style": case "net_fold_check": case "net_fold_check_distinct":
+      return { verdict: "review", reason: "그림 – 선생님 확인" };
     case "face_set": {
       const k = (arr) => [...new Set(arr.map(gFaceKey))].sort().join("|");
       return k(student) === k(answer) ? { verdict: "correct", reason: "집합 일치" } : { verdict: "wrong", reason: "집합 불일치" };
@@ -654,7 +682,7 @@ function gradeQuestion(key, rawAnswers) {
   for (const [pid, rule] of Object.entries(key.compareRules)) {
     const pts = key.partScores?.[pid] ?? 1; maxScore += pts;
     if (rule === "none") continue;
-    const r = gradePart(rule, rawAnswers?.[pid], ans.correctAnswer[pid], (ans.acceptedAnswers || {})[pid] || []);
+    const r = gradePart(rule, rawAnswers?.[pid], ans.correctAnswer[pid], (ans.acceptedAnswers || {})[pid] || [], key.questionId + ":" + pid);
     const p = { verdict: r.verdict, rule, reason: r.reason, score: 0, maxScore: pts };
     if (r.verdict === "correct") { p.score = pts; score += pts; }
     else if (r.verdict === "review") { needsReview = true; p.feedback = "선생님이 확인하고 있어요."; }
@@ -720,7 +748,7 @@ $("#btnCreateAsg").onclick = async () => {
     await addDoc(collection(db, "classes", cls.id, "assignments"), {
       lessonId: L, title: `${L.replace("L0", "").replace("L", "")}차시 ${ld.title}`, textbookPages: ld.textbookPages, workbookPages: ld.workbookPages,
       questionIds: ld.questionIds, components: { story: false, lab: false, workbook: true },
-      policy: { maxAttempts: GRADING_POLICY.maxAttempts, requireNoteBeforeRetry: GRADING_POLICY.requireNoteBeforeRetry, revealAnswer: "afterDue" },
+      policy: { maxAttempts: GRADING_POLICY.maxAttempts, requireNoteBeforeRetry: GRADING_POLICY.requireNoteBeforeRetry, noteRequiredAfterWrong: GRADING_POLICY.noteRequiredAfterWrong, revealAnswer: "afterDue" },
       status: "open", createdAt: serverTimestamp(), createdBy: me.email
     });
     log(`${L} 과제를 만들고 열었습니다.`);
@@ -806,7 +834,8 @@ async function gradeSubmission(id) {
   if (prev.length >= policy.maxAttempts) return reject("max_attempts", `한 문제는 ${policy.maxAttempts}번까지 풀 수 있어요.`);
   const noteRef = doc(db, "classes", cls.id, "wrongNotes", `${sub.studentId}_${sub.questionId}`);
   const noteSnap = await getDoc(noteRef);
-  if (prev.length > 0 && policy.requireNoteBeforeRetry && (!noteSnap.exists() || !["submitted", "resolved"].includes(noteSnap.data().status)))
+  const noteAfter = policy.noteRequiredAfterWrong ?? 1;   // 이 횟수만큼 틀린 뒤의 도전에는 오답노트 제출이 필요
+  if (prev.length >= noteAfter && policy.requireNoteBeforeRetry && (!noteSnap.exists() || !["submitted", "resolved"].includes(noteSnap.data().status)))
     return reject("note_required", "오답노트를 먼저 써서 제출해요.");
 
   // ③ 채점
@@ -854,7 +883,7 @@ async function gradeSubmission(id) {
   Object.entries(g.parts).filter(([, p]) => p.verdict === "review").forEach(([pid, p]) => {
     b.set(doc(collection(db, "classes", cls.id, "reviewQueue")), {
       submissionId: id, studentId: sub.studentId, questionId: sub.questionId, partId: pid,
-      rawAnswer: JSON.stringify(sub.rawAnswers?.[pid] ?? ""), reason: p.reason, status: "open", createdAt: serverTimestamp() });
+      rawAnswer: JSON.stringify(sub.rawAnswers?.[pid] ?? ""), reason: p.reason, maxScore: p.maxScore, status: "open", createdAt: serverTimestamp() });
   });
   await b.commit();
   gradedCount++;
@@ -904,20 +933,50 @@ function watchReviewQueue() {
   rqUnsub = onSnapshot(query(collection(db, "classes", cls.id, "reviewQueue"), where("status", "==", "open")), snap => {
     $("#rqCount").textContent = snap.size + "건";
     if (!snap.size) { $("#rqList").innerHTML = "없음"; return; }
-    $("#rqList").innerHTML = snap.docs.map(d => { const r = d.data();
-      return `<div class="rq"><b>${Number(r.studentId.slice(1))}번</b> <span>${r.questionId.replace("M52U5-", "")} (${r.partId})</span>
-        <span>학생 답: <code>${JSON.parse(r.rawAnswer || '""')}</code></span><span class="muted">${r.reason}</span>
-        <button data-rv="${d.id}" data-ok="1">정답 처리</button><button class="danger" data-rv="${d.id}" data-ok="0">오답 처리</button></div>`; }).join("");
-    $("#rqList").querySelectorAll("[data-rv]").forEach(b => b.onclick = () => resolveReview(b.dataset.rv, b.dataset.ok === "1"));
+    $("#rqList").innerHTML = snap.docs.map(d => { const r = d.data(); let raw = ""; try { raw = JSON.parse(r.rawAnswer || '""'); } catch (_) { raw = r.rawAnswer; }
+      const isDraw = raw && typeof raw === "object" && raw.drawingId;
+      const max = r.maxScore || 1;
+      const scoreBtns = max > 1 ? `<button data-rv="${d.id}" data-sc="${max}">정답 ${max}점</button><button class="ghost" data-rv="${d.id}" data-sc="${Math.floor(max / 2)}">부분 ${Math.floor(max / 2)}점</button><button class="danger" data-rv="${d.id}" data-sc="0">오답 0점</button>`
+        : `<button data-rv="${d.id}" data-sc="1">정답 처리</button><button class="danger" data-rv="${d.id}" data-sc="0">오답 처리</button>`;
+      return `<div class="rq" style="align-items:flex-start"><b>${Number(r.studentId.slice(1))}번</b> <span>${r.questionId.replace("M52U5-", "")} (${r.partId})</span>
+        ${isDraw ? `<canvas class="rqdraw" data-hw="${raw.drawingId}" width="360" height="240" style="border:1px solid #e6e9f0;border-radius:8px;background:#fff"></canvas>` : `<span>학생 답: <code>${esc(typeof raw === "object" ? JSON.stringify(raw) : raw)}</code></span>`}
+        <span class="${/후보/.test(r.reason) ? "ok" : "muted"}">${esc(r.reason)}</span><span class="row" style="margin:0">${scoreBtns}</span></div>`; }).join("");
+    $("#rqList").querySelectorAll("[data-rv]").forEach(b => b.onclick = () => resolveReview(b.dataset.rv, +b.dataset.sc));
+    $("#rqList").querySelectorAll("canvas[data-hw]").forEach(async cv => {
+      try { const h = await getDoc(doc(db, "classes", cls.id, "handwriting", cv.dataset.hw)); if (h.exists()) renderDrawing(cv, h.data()); } catch (e) { log("그림 불러오기 실패: " + e.code); }
+      cv.onclick = () => { const w = window.open("", "_blank", "width=900,height=650"); if (!w) return; const big = w.document.createElement("canvas"); big.width = 860; big.height = 580; w.document.body.appendChild(big);
+        getDoc(doc(db, "classes", cls.id, "handwriting", cv.dataset.hw)).then(h => h.exists() && renderDrawing(big, h.data())); };
+    });
   }, e => log("확인 대기 구독 오류: " + e.code));
 }
-async function resolveReview(rid, correct) {
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// 학생 그림판(획 데이터) 그리기 – 학생 앱과 같은 형식 { v, bg, w, h, s:[[색, 굵기, x,y,x,y…], …] }
+function renderDrawing(canvas, docData) {
+  let d; try { d = JSON.parse(docData.strokes); } catch (_) { return; }
+  const ctx = canvas.getContext("2d"), sx = canvas.width / d.w, sy = canvas.height / d.h, k = Math.min(sx, sy);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save(); ctx.scale(k, k); drawBackground(ctx, d.bg, d.w, d.h);
+  for (const st of d.s) { const [c, wd, ...p] = st; if (p.length < 2) continue; ctx.strokeStyle = c; ctx.lineWidth = wd; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (c === "dash") { ctx.strokeStyle = "#1d2433"; ctx.setLineDash([8, 7]); } else ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]); ctx.stroke(); }
+  ctx.restore();
+}
+function drawBackground(ctx, bg, w, h) {
+  const S = 28; ctx.save();
+  if (bg === "grid") { ctx.strokeStyle = "#dfe4ee"; ctx.lineWidth = 1; for (let x = 0; x <= w; x += S) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); } for (let y = 0; y <= h; y += S) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); } }
+  if (bg === "tri") { ctx.fillStyle = "#b9c2d8"; const dy = S * Math.sqrt(3) / 2; for (let r = 0, y = 0; y <= h; r++, y += dy) for (let x = (r % 2) * S / 2; x <= w; x += S) { ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill(); } }
+  ctx.restore();
+}
+async function resolveReview(rid, scoreGiven) {
   try {
     const rref = doc(db, "classes", cls.id, "reviewQueue", rid); const r = (await getDoc(rref)).data();
     const sref = doc(db, "classes", cls.id, "submissions", r.submissionId); const s = (await getDoc(sref)).data();
     const pr = { ...s.partResults }; const p = pr[r.partId];
-    pr[r.partId] = { ...p, correct, verdict: correct ? "correct" : "wrong", needsReview: false, score: correct ? p.maxScore : 0,
-      feedback: correct ? null : "선생님이 확인했어요. 면 이름은 꼭짓점을 둘레를 따라 차례대로 읽어요.", misconceptionTag: correct ? null : (p.misconceptionTag || "MC-FACE-NAMING"), resolvedBy: "teacher" };
+    const sc = Math.max(0, Math.min(p.maxScore, Number(scoreGiven) || 0)); const correct = sc === p.maxScore;
+    const fb = correct ? null : p.rule === "face_by_vertex_cycle" ? "선생님이 확인했어요. 면 이름은 꼭짓점을 둘레를 따라 차례대로 읽어요."
+      : sc > 0 ? "선생님이 확인했어요. 거의 맞았어요! 빠진 부분을 다시 생각해 봐요." : "선생님이 확인했어요. 다시 생각해 봐요.";
+    pr[r.partId] = { ...p, correct, verdict: correct ? "correct" : (sc > 0 ? "partial" : "wrong"), needsReview: false, score: sc, feedback: fb,
+      misconceptionTag: correct ? null : (p.misconceptionTag || (p.rule === "face_by_vertex_cycle" ? "MC-FACE-NAMING" : null)), resolvedBy: "teacher" };
     const vals = Object.values(pr);
     const still = vals.some(v => v.needsReview), score = vals.reduce((a, v) => a + (v.score || 0), 0);
     const allCorrect = !still && vals.every(v => v.correct === true);
@@ -925,8 +984,8 @@ async function resolveReview(rid, correct) {
     b.update(sref, { partResults: pr, score, allCorrect, status: still ? "pending_review" : "graded",
       feedback: Object.entries(pr).filter(([, v]) => v.feedback).map(([pid, v]) => ({ partId: pid, text: v.feedback })),
       teacherOverride: { parts: { [r.partId]: correct ? "correct" : "wrong" }, reason: "확인 대기 처리", by: me.email, at: Timestamp.now() } });
-    b.update(rref, { status: "resolved", resolution: correct ? "correct" : "wrong", resolvedAt: serverTimestamp() });
-    b.set(doc(collection(db, "classes", cls.id, "auditLogs")), { type: "reviewResolve", submissionId: r.submissionId, partId: r.partId, correct, by: me.email, at: serverTimestamp() });
+    b.update(rref, { status: "resolved", resolution: correct ? "correct" : (sc > 0 ? "partial" : "wrong"), score: sc, resolvedAt: serverTimestamp() });
+    b.set(doc(collection(db, "classes", cls.id, "auditLogs")), { type: "reviewResolve", submissionId: r.submissionId, partId: r.partId, score: sc, by: me.email, at: serverTimestamp() });
     const wb = { lastScore: score, solved: allCorrect, at: Timestamp.now() }; if ((s.attemptNo || 1) === 1) wb.firstScore = score;
     b.set(doc(db, "classes", cls.id, "progress", `${s.studentId}_${s.assignmentId}`), { workbook: { [s.questionId]: wb }, updatedAt: serverTimestamp() }, { merge: true });
     // 오답으로 확정되었는데 오답노트가 없으면 만든다
@@ -941,7 +1000,7 @@ async function resolveReview(rid, correct) {
         errorReasonType: "", errorReasonText: "", missedConcepts: [], correctMethodText: "", nextTimeTip: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       else b.update(nref, { status: "writing", attemptHistory: arrayUnion(hist), "retry.lastResult": "wrong", updatedAt: serverTimestamp() });
     }
-    await b.commit(); log(`확인 처리: ${r.questionId.replace("M52U5-", "")} ${r.partId} → ${correct ? "정답" : "오답"}`);
+    await b.commit(); log(`확인 처리: ${Number(r.studentId.slice(1))}번 ${r.questionId.replace("M52U5-", "")} ${r.partId} → ${sc}/${p.maxScore}점`);
   } catch (e) { log("확인 처리 실패: " + (e.code || e.message)); }
 }
 
@@ -977,7 +1036,7 @@ $("#btnUpImg").onclick = async () => {
 // ── 채점 규칙 ──────────────────────────────────────────
 const POLICY_ROWS = [
   ["한 문제 최대 시도", "3번"],
-  ["재도전 조건", "틀리면 오답노트(①틀린 이유, ③올바른 방법)를 써야 재도전"],
+  ["재도전 조건", "1번 틀리면 바로 다시 풀기(오답 기록은 자동 저장). 2번 틀리면 오답노트(①틀린 이유, ③올바른 방법)를 제출해야 3번째 도전 (2026-11-27 변경)"],
   ["면 이름", "꼭짓점을 둘레 순서로 읽으면 시작점·방향과 관계없이 정답 (예: ㄱㄴㅂㅁ = ㄴㅂㅁㄱ = ㅁㅂㄴㄱ). 순서가 섞이면(ㄱㅂㄴㅁ) 교사 확인"],
   ["복수 선택", "정답 집합과 완전히 같아야 점수, 일부만 맞으면 0점 + 피드백"],
   ["오탈자", "오답 처리, 교사 화면에 '오탈자' 표시"],

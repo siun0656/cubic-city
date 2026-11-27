@@ -94,6 +94,12 @@
   .nlabel { font-size:19px; font-weight:800; margin:16px 0 8px; } .nlabel:first-child { margin-top:0; }
   .saved { font-size:15px; color:var(--sub); text-align:right; min-height:20px; }
   @media (max-width: 1100px) { .qgrid { grid-template-columns:repeat(2, 1fr); } .split { grid-template-columns:1fr; } }
+  .dp { display:flex; flex-direction:column; gap:8px; }
+  .dp canvas { width:100%; aspect-ratio: 640 / 420; background:#fff; border:2px solid var(--line); border-radius:12px; touch-action:none; }
+  .dp .tools { display:flex; gap:6px; flex-wrap:wrap; }
+  .dp .tools button { min-height:46px; padding:0 14px; border-radius:12px; background:#eef1f8; font-size:17px; font-weight:700; color:var(--ink); }
+  .dp .tools button.on { background:#1d2433; color:#fff; }
+  .dp .tip { font-size:15px; color:var(--sub); }
 </style>
 </head>
 <body>
@@ -312,7 +318,7 @@ const CONCEPTS = {
 const REASONS = [["calc", "계산 실수"], ["misread", "문제를 잘못 읽음"], ["concept", "개념을 몰랐음"], ["figure", "그림을 잘못 봄"], ["other", "기타"]];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const msOf = (t) => t?.toMillis?.() || Date.now() + 1e9;   // 아직 서버 시각이 없는(보내는 중) 제출은 맨 뒤로
-const fmtAns = (v) => Array.isArray(v) ? (v.length ? v.join(", ") : "(고르지 않음)") : (v === undefined || v === "" ? "(빈칸)" : String(v));
+const fmtAns = (v) => Array.isArray(v) ? (v.length ? v.join(", ") : "(고르지 않음)") : (v && typeof v === "object") ? (v.drawingId ? "(그림 제출함)" : "(제출함)") : (v === undefined || v === "" ? "(빈칸)" : String(v));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "x" + Date.now().toString(36) + Math.random().toString(36).slice(2));
 const qLabel = (q) => q ? (q.workbookPage ? `익힘 ${q.workbookPage}쪽 ${q.problemNumber}번` : `교과서 ${q.textbookPage}쪽 ${q.problemNumber}번`) : "";
 
@@ -371,19 +377,21 @@ function qState(qid) {
   const done = mine.filter(s => ["graded", "pending_review"].includes(s.status));
   const pending = mine.find(s => ["submitted", "grading"].includes(s.status)) || null;
   const max = asg?.policy?.maxAttempts || 3;
+  const noteAfter = asg?.policy?.noteRequiredAfterWrong ?? 2;   // 이 횟수만큼 틀리면 오답노트를 내야 다음 도전
   const note = notes[qid] || null;
-  const st = { mine, done, pending, max, note, attempts: done.length, last: mine[mine.length - 1] || null,
+  const st = { mine, done, pending, max, note, noteAfter, attempts: done.length, last: mine[mine.length - 1] || null,
     solved: done.some(s => s.allCorrect), review: done.some(s => s.status === "pending_review") && !done.some(s => s.allCorrect) };
   if (pending) Object.assign(st, { label: "채점 중", cls: "b-wait", action: "result" });
   else if (st.solved) Object.assign(st, { label: "맞았어요 ○", cls: "b-ok", action: "result" });
   else if (st.review) Object.assign(st, { label: "선생님 확인 중", cls: "b-wait", action: "result" });
   else if (st.attempts === 0) Object.assign(st, { label: "풀어 보기", cls: "b-new", action: "solve" });
   else if (st.attempts >= max) Object.assign(st, { label: "기회를 다 썼어요", cls: "b-bad", action: "result" });
-  else if (!note || !["submitted", "resolved"].includes(note.status)) Object.assign(st, { label: "오답노트를 먼저 써요", cls: "b-bad", action: "note" });
+  else if (st.attempts >= noteAfter && (!note || !["submitted", "resolved"].includes(note.status))) Object.assign(st, { label: "오답노트를 먼저 써요", cls: "b-bad", action: "note" });
   else Object.assign(st, { label: `다시 도전 (${st.attempts}/${max})`, cls: "b-bad", action: "solve" });
   return st;
 }
 
+function noteRequired(n) { const s = qState(n.questionId); return ["auto_created", "writing", "revisit_requested"].includes(n.status) && !s.solved && s.attempts >= s.noteAfter && s.attempts < s.max || n.status === "revisit_requested"; }
 // ── 홈 ──────────────────────────────────────────────
 function renderHome() {
   const menus = document.querySelectorAll(".menu");
@@ -391,7 +399,7 @@ function renderHome() {
   if (!asg) { $("#todayBody").innerHTML = `<div class="t">아직 배정된 과제가 없어요</div><div class="s">선생님이 과제를 열면 여기에 나타나요.</div>`; return; }
   const ids = asg.questionIds || [];
   const solved = ids.filter(q => qState(q).solved).length;
-  const toWrite = Object.values(notes).filter(n => ["auto_created", "writing", "revisit_requested"].includes(n.status)).length;
+  const toWrite = Object.values(notes).filter(noteRequired).length;
   $("#todayBody").innerHTML = `<div class="t">${esc(asg.title)}</div>
     <div class="s">교과서 ${esc(asg.textbookPages || "")} · 수학익힘 ${esc(asg.workbookPages || "")} · 맞힌 문제 <b>${solved}/${ids.length}</b>${toWrite ? ` · 써야 할 오답노트 <b style="color:var(--bad)">${toWrite}</b>` : ""}</div>`;
 }
@@ -406,7 +414,7 @@ function renderWb() {
   if (!asg) { $("#wbBody").innerHTML = `<div class="pc">열린 과제가 없어요.</div>`; return; }
   const byPage = {};
   (asg.questionIds || []).forEach(id => { const q = questions[id]; const k = q ? (q.workbookPage ? `수학익힘 ${q.workbookPage}쪽` : `교과서 ${q.textbookPage}쪽`) : "문제"; (byPage[k] = byPage[k] || []).push(id); });
-  $("#wbBody").innerHTML = `<div class="today" style="margin-bottom:6px"><div class="t">${esc(asg.title)}</div><div class="s">한 문제는 ${asg.policy?.maxAttempts || 3}번까지 풀 수 있어요. 틀리면 오답노트를 쓰고 다시 도전해요.</div></div>` +
+  $("#wbBody").innerHTML = `<div class="today" style="margin-bottom:6px"><div class="t">${esc(asg.title)}</div><div class="s">한 문제는 ${asg.policy?.maxAttempts || 3}번까지 풀 수 있어요. 1번 틀리면 바로 다시 풀고, 2번 틀리면 오답노트를 쓴 뒤 마지막으로 도전해요.</div></div>` +
     Object.entries(byPage).map(([k, ids]) => `<div class="sec">${k}</div><div class="qgrid">${ids.map(id => {
       const q = questions[id], s = qState(id);
       return `<button class="qcard" data-q="${id}"><span class="tt">${q ? q.problemNumber + "번" : id}${q?.difficultyStars ? " " + "★".repeat(q.difficultyStars) : ""}</span>
@@ -452,7 +460,22 @@ function partUI(p, ans) {
       b.onclick = () => { const a = ans[p.partId]; const i = a.indexOf(o); if (i >= 0) a.splice(i, 1); else a.push(o);
         b.classList.toggle("on", i < 0); b.textContent = (i < 0 ? mark || "✓ " : "") + o; }; c.appendChild(b); });
     w.appendChild(c);
-  } else if (p.inputType === "face_name") {
+  } else if (p.inputType === "point_name" || p.inputType === "segment_name") {
+    const n = p.inputType === "point_name" ? 1 : 2, word = n === 1 ? "점" : "선분";
+    let letters = "";
+    const f = document.createElement("div"); f.className = "face"; f.innerHTML = `<span>${word}</span>` + "<span class='bx'></span>".repeat(n);
+    const draw = () => { [...f.querySelectorAll(".bx")].forEach((x, i) => x.textContent = letters[i] || ""); ans[p.partId] = letters ? `${word} ${letters}` : ""; };
+    const kp = document.createElement("div"); kp.className = "kp";
+    [..."ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"].forEach(ch => { const b = document.createElement("button"); b.textContent = ch; b.onclick = () => { if (letters.length < n) { letters += ch; draw(); } }; kp.appendChild(b); });
+    const del = document.createElement("button"); del.className = "wide"; del.textContent = "⌫ 지우기"; del.onclick = () => { letters = letters.slice(0, -1); draw(); }; kp.appendChild(del);
+    w.appendChild(f); w.appendChild(kp);
+  } else if (p.inputType === "long_text") {
+    const t = document.createElement("textarea"); t.className = "tx"; t.placeholder = "자유롭게 써요"; t.oninput = () => ans[p.partId] = t.value; w.appendChild(t);
+  } else if (p.inputType === "isometric_edges" || p.inputType === "net_rectangles") {
+    const pad = drawPad(p.inputType === "isometric_edges" ? "tri" : "grid");
+    pad.onChange = () => ans[p.partId] = pad.isEmpty() ? "" : { __drawing: pad };
+    w.appendChild(pad.el);
+  } else if (p.inputType === "face_name" || p.inputType === "face_pick_3d") {
     let letters = "";
     const f = document.createElement("div"); f.className = "face"; f.innerHTML = `<span>면</span>` + "<span class='bx'></span>".repeat(4);
     const draw = () => { [...f.querySelectorAll(".bx")].forEach((x, i) => x.textContent = letters[i] || ""); ans[p.partId] = letters ? "면 " + letters : ""; };
@@ -479,6 +502,17 @@ $("#btnSubmit").onclick = async () => {
   $("#btnSubmit").disabled = true;
   const subId = uuid();
   const raw = {}; (q.parts || []).forEach(p => raw[p.partId] = cur.ans[p.partId] ?? (p.inputType === "multi_select" ? [] : ""));
+  // 그림판 답: 먼저 손글씨(획) 문서로 저장하고, 답에는 문서 번호만 넣는다
+  for (const [pid, v] of Object.entries(raw)) {
+    if (v && v.__drawing) {
+      try {
+        const ref = doc(collection(db, "classes", prof.classId, "handwriting"));
+        const pad = v.__drawing;
+        await setDoc(ref, { studentId: prof.studentId, noteId: `q:${cur.qid}:${pid}`, seq: s.attempts + 1, strokes: pad.serialize(), width: pad.W, height: pad.H, background: pad.bg, createdAt: serverTimestamp() });
+        raw[pid] = { drawingId: ref.id };
+      } catch (e) { $("#btnSubmit").disabled = false; return toast("그림을 저장하지 못했어요 (" + e.code + ")"); }
+    }
+  }
   const data = { studentId: prof.studentId, assignmentId: asg.id, questionId: cur.qid, lessonId: q.lesson || null,
     attemptNo: s.attempts + 1, isRetry: s.attempts > 0, rawAnswers: raw, startedAt: cur.startedAt,
     durationMs: Date.now() - cur.startedAt, status: "submitted", clientVersion: "wb-1" };
@@ -505,6 +539,42 @@ function resendPending() {
   });
 }
 
+// ── 그림판(겨냥도·전개도·손글씨 공용) ────────────────────────
+// 저장 형식: { v:1, bg, w, h, s:[[색 또는 "dash", 굵기, x,y,x,y,…], …] } – 교사 화면 renderDrawing과 같은 형식
+function drawBackground(ctx, bg, w, h) {
+  const S = 28; ctx.save();
+  if (bg === "grid") { ctx.strokeStyle = "#dfe4ee"; ctx.lineWidth = 1; for (let x = 0; x <= w; x += S) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); } for (let y = 0; y <= h; y += S) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); } }
+  if (bg === "tri") { ctx.fillStyle = "#b9c2d8"; const dy = S * Math.sqrt(3) / 2; for (let r = 0, y = 0; y <= h; r++, y += dy) for (let x = (r % 2) * S / 2; x <= w; x += S) { ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill(); } }
+  ctx.restore();
+}
+function drawPad(bg) {
+  const W = 640, H = 420;
+  const el = document.createElement("div"); el.className = "dp";
+  el.innerHTML = `<div class="tools"><button data-t="#1d2433" class="on">✏️ 실선</button><button data-t="dash">┅ 점선</button><button data-t="#e04545">🔴 빨강</button><button data-u>↶ 되돌리기</button><button data-x>🗑 모두 지우기</button></div>
+    <canvas width="${W * 2}" height="${H * 2}"></canvas><div class="tip">${bg === "tri" ? "점과 점을 이어 겨냥도를 그려요. 보이지 않는 모서리는 '점선'으로 그려요." : "모눈 1칸은 1 cm예요. 전개도를 그려요. 잘리지 않는 모서리는 '점선'으로 그려요."}</div>`;
+  const cv = el.querySelector("canvas"), ctx = cv.getContext("2d");
+  const strokes = []; let curS = null, tool = "#1d2433";
+  const pad = { el, W, H, bg, onChange: () => {}, isEmpty: () => !strokes.length,
+    serialize: () => JSON.stringify({ v: 1, bg, w: W, h: H, s: strokes.map(s => [s.c, s.w, ...s.p.map(Math.round)]) }) };
+  function redraw() {
+    ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); drawBackground(ctx, bg, W, H);
+    for (const s of strokes) { if (s.p.length < 2) continue; ctx.lineWidth = s.w; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.strokeStyle = s.c === "dash" ? "#1d2433" : s.c; ctx.setLineDash(s.c === "dash" ? [8, 7] : []);
+      ctx.beginPath(); ctx.moveTo(s.p[0], s.p[1]); for (let i = 2; i < s.p.length; i += 2) ctx.lineTo(s.p[i], s.p[i + 1]); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; };
+  cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); curS = { c: tool, w: tool === "#e04545" ? 3 : 2.5, p: pos(e) }; strokes.push(curS); });
+  cv.addEventListener("pointermove", e => { if (!curS) return; const [x, y] = pos(e), n = curS.p.length; if (Math.hypot(x - curS.p[n - 2], y - curS.p[n - 1]) < 1.5) return; curS.p.push(x, y); redraw(); });
+  const end = () => { if (curS) { if (curS.p.length < 4) curS.p.push(curS.p[0] + 0.5, curS.p[1] + 0.5); curS = null; redraw(); pad.onChange(); } };
+  cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
+  el.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { tool = b.dataset.t; el.querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x === b)); });
+  el.querySelector("[data-u]").onclick = () => { strokes.pop(); redraw(); pad.onChange(); };
+  el.querySelector("[data-x]").onclick = () => { if (strokes.length && confirm("모두 지울까요?")) { strokes.length = 0; redraw(); pad.onChange(); } };
+  redraw();
+  return pad;
+}
+
 // ── 채점 결과 ─────────────────────────────────────────
 let resTimer = null;
 function openResult(subId, qid) { view = { page: "res", subId, qid, openedAt: Date.now() }; page("pRes"); renderResult(); clearInterval(resTimer); resTimer = setInterval(() => view.page === "res" ? renderResult() : clearInterval(resTimer), 4000); }
@@ -528,13 +598,16 @@ function renderResult() {
         ${r.feedback ? `<div class="fb">💬 ${esc(r.feedback)}</div>` : ""}</div></div>`; }).join("");
     const head = s.allCorrect ? `🎉 모두 맞았어요! (${s.score}/${s.maxScore})` : s.status === "pending_review" ? `⏳ 선생님이 확인하고 있어요 (${s.score}/${s.maxScore})` : `${s.score}/${s.maxScore} – 틀린 부분을 다시 생각해 봐요`;
     const btns = s.allCorrect ? `<button class="go" data-act="next">다음 문제 ▶</button>`
-      : (st.note && !["submitted", "resolved"].includes(st.note.status) && st.attempts < st.max) ? `<button class="go red" data-act="note">오답노트 쓰러 가기 ▶</button>`
+      : (s.status === "pending_review") ? ""
+      : (st.action === "solve" && st.attempts < st.max) ? `<button class="go" data-act="retry">다시 풀기 ▶</button>${st.note ? `<button class="go gray" data-act="note">오답노트 써 두기(선택)</button>` : ""}`
+      : (st.action === "note") ? `<button class="go red" data-act="note">오답노트 쓰러 가기 ▶</button><span class="hint" style="align-self:center">2번 틀렸어요. 오답노트를 쓰면 마지막 도전이 열려요.</span>`
       : (st.attempts >= st.max && !st.solved) ? `<span class="hint">이 문제는 기회를 다 썼어요. 오답노트를 정리해 두면 선생님이 봐 주세요.</span>` : "";
     $("#resBody").innerHTML = `<p class="big">${head}</p>${lines}<div class="actions">${btns}<button class="go gray" data-act="wb">문제 목록</button></div>`;
   }
   $("#resBody").querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
     if (b.dataset.act === "wb") go("wb");
     if (b.dataset.act === "note") openNote(qid);
+    if (b.dataset.act === "retry") openQ(qid);
     if (b.dataset.act === "next") { const ids = asg?.questionIds || []; const nx = ids.find(id => !qState(id).solved && qState(id).action === "solve"); nx ? openQ(nx) : go("wb"); }
   });
 }
@@ -545,7 +618,9 @@ function renderNotes() {
   const list = Object.values(notes).sort((a, b) => (a.status === "resolved") - (b.status === "resolved") || (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
   if (!list.length) { $("#notesBody").innerHTML = `<div class="pc"><p class="big">📒 아직 오답노트가 없어요</p><p class="hint">수학익힘에서 틀린 문제가 생기면 여기에 자동으로 만들어져요.</p></div>`; return; }
   $("#notesBody").innerHTML = `<div class="qgrid">${list.map(n => { const q = questions[n.questionId]; const [lb, c] = NOTE_ST[n.status] || [n.status, "b-new"];
-    return `<button class="qcard" data-n="${n.questionId}"><span class="tt">${esc(qLabel(q))}</span><span class="dd">틀린 횟수 ${(n.attemptHistory || []).filter(h => !h.allCorrect).length}번</span><span class="badge ${c}">${lb}</span></button>`; }).join("")}</div>`;
+    const opt = ["auto_created", "writing"].includes(n.status) && !noteRequired(n);
+    const [lb2, c2] = opt ? (qState(n.questionId).solved ? ["맞혔어요 · 정리는 선택", "b-ok"] : ["써 두면 좋아요(선택)", "b-new"]) : [lb, c];
+    return `<button class="qcard" data-n="${n.questionId}"><span class="tt">${esc(qLabel(q))}</span><span class="dd">틀린 횟수 ${(n.attemptHistory || []).filter(h => !h.allCorrect).length}번</span><span class="badge ${c2}">${lb2}</span></button>`; }).join("")}</div>`;
   $("#notesBody").querySelectorAll("[data-n]").forEach(b => b.onclick = () => {
     const n = notes[b.dataset.n]; if (n.status === "submitted") { const s = qState(n.questionId); if (s.action === "solve" && asg && n.assignmentId === asg.id) return openQ(n.questionId); }
     openNote(b.dataset.n);
@@ -583,7 +658,7 @@ function openNote(qid) {
     <div class="nlabel">④ 다음에는 무엇을 주의할까요?</div>
     <input class="tx" id="nTip" placeholder="예: 색칠한 면과 만나지 않는 면을 찾기" value="${esc(d.nextTimeTip)}" ${dis}>
     <div class="saved" id="nSaved">${editable ? "" : (NOTE_ST[n.status] || [""])[0]}</div>
-    <div class="actions">${editable ? `<button class="go gray" id="nSave">임시 저장</button><button class="go red" id="nSubmit">제출하고 다시 도전 ▶</button>`
+    <div class="actions">${editable ? `<button class="go gray" id="nSave">임시 저장</button>${(!noteRequired(n) && qState(qid).action === "solve" && asg && n.assignmentId === asg.id) ? `<button class="go" id="nSkip">노트 없이 다시 풀기</button>` : ""}<button class="go red" id="nSubmit">제출하고 다시 도전 ▶</button>`
       : (n.status === "submitted" && qState(qid).action === "solve" && asg && n.assignmentId === asg.id) ? `<button class="go" id="nRetry">다시 도전 ▶</button>` : ""}</div>`;
   if (!editable) { const r = $("#nRetry"); if (r) r.onclick = () => openQ(qid); return; }
   const touch = () => { nt.dirty = true; localStorage.setItem(noteDraftKey(qid), JSON.stringify(nt.data)); $("#nSaved").textContent = "기기에 저장됨"; };
@@ -594,6 +669,7 @@ function openNote(qid) {
     $(sel).onblur = () => saveNote(false);
   });
   $("#nSave").onclick = () => saveNote(true);
+  if ($("#nSkip")) $("#nSkip").onclick = async () => { await saveNote(false); openQ(qid); };
   $("#nSubmit").onclick = () => submitNote();
   clearInterval(ntTimer); ntTimer = setInterval(() => { if (view.page === "note") saveNote(false); else clearInterval(ntTimer); }, 30000);
 }
