@@ -31,6 +31,12 @@
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0; }
   .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:13px; background:#eef1f8; }
   .pill.ok { background:#e5f6ec; } .pill.bad { background:#fde8e8; }
+  .pill.warn { background:#fff4d6; }
+  #engineState { font-size:13px; }
+  .grid td, .grid th { text-align:center; } .grid td:first-child, .grid th:first-child { text-align:left; }
+  .cell { display:inline-block; min-width:44px; padding:3px 6px; border-radius:8px; font-weight:700; font-size:14px; }
+  .c-ok { background:#e5f6ec; color:var(--ok); } .c-bad { background:#fde8e8; color:var(--bad); } .c-wait { background:#eef1f8; color:var(--sub); } .c-rev { background:#fff4d6; color:#8a5a00; }
+  .rq { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   #log { font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; color:var(--sub); max-height:180px; overflow:auto; background:#fafbfe; padding:8px; border-radius:8px; }
   .hidden { display:none !important; }
   .center { max-width:420px; margin:12vh auto; text-align:center; }
@@ -54,6 +60,7 @@
   <h1>CUBIC CITY <span class="muted">교사용</span></h1>
   <div class="grow"></div>
   <select id="classSel" class="hidden"></select>
+  <span id="engineState" class="pill hidden">○ 채점 엔진 꺼짐</span>
   <span id="who" class="muted"></span>
   <button id="btnLogout" class="ghost hidden">로그아웃</button>
 </header>
@@ -71,6 +78,8 @@
     <button data-tab="class" class="on">학급</button>
     <button data-tab="students">학생 계정·모둠</button>
     <button data-tab="cards">로그인 카드</button>
+    <button data-tab="assign">과제</button>
+    <button data-tab="results">채점 현황</button>
     <button data-tab="data">문항·정답 올리기</button>
     <button data-tab="policy">채점 규칙</button>
   </nav>
@@ -135,6 +144,40 @@
     <div class="card printable"><div id="cards"></div></div>
   </section>
 
+  <!-- 과제 -->
+  <section data-pane="assign" class="hidden">
+    <div class="card">
+      <h2>과제 만들기</h2>
+      <div class="row">
+        <label>차시</label><select id="asgLesson"></select>
+        <button id="btnCreateAsg">과제 만들고 열기</button>
+      </div>
+      <p class="muted">시범 차시는 4차시(L04)입니다. 과제를 열면 학생 홈의 '오늘의 과제'와 MATH WORKBOOK에 바로 나타납니다.<br>
+      채점 규칙: 한 문제 3번까지 · 틀리면 오답노트 제출 후 재도전 · 면 이름은 둘레 순서면 정답.</p>
+    </div>
+    <div class="card">
+      <h2>과제 목록</h2>
+      <table><thead><tr><th>과제</th><th>문항</th><th>상태</th><th></th></tr></thead><tbody id="asgRows"></tbody></table>
+    </div>
+  </section>
+
+  <!-- 채점 현황 -->
+  <section data-pane="results" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">채점 현황</h2>
+        <div class="row"><label>과제</label><select id="resAsg"></select></div>
+      </div>
+      <p class="muted">이 화면(교사 대시보드)이 열려 있는 동안 <b>채점 엔진</b>이 학생 제출을 자동으로 채점합니다. 수업 중에는 노트북 절전을 꺼 두세요.<br>
+        <span class="cell c-ok">○</span> 맞힘 <span class="cell c-bad">×2</span> 틀린 횟수 <span class="cell c-rev">확인</span> 선생님 확인 필요 <span class="cell c-wait">…</span> 채점 중 · 괄호 안은 첫 시도 점수</p>
+      <div style="overflow:auto"><table class="grid"><thead id="resHead"></thead><tbody id="resRows"></tbody><tfoot id="resFoot"></tfoot></table></div>
+    </div>
+    <div class="card">
+      <h2>선생님 확인 대기 <span id="rqCount" class="pill"></span></h2>
+      <div id="rqList" class="muted">없음</div>
+    </div>
+  </section>
+
   <!-- 문항·정답 올리기 -->
   <section data-pane="data" class="hidden">
     <div class="card">
@@ -153,8 +196,15 @@
         4차시(L04) 6문항은 2026-11-26 승인 내용대로 <span class="pill ok">승인</span> 상태로, 나머지는 <span class="pill">검토 대기</span>로 올라갑니다.</p>
       <div class="row"><input type="file" id="f06" accept=".json"><button id="btnUp06">올리기</button></div>
     </div>
+    <div class="card">
+      <h2>3. 문항 그림 올리기 (p074_q1.png 등)</h2>
+      <p class="muted">수학익힘 그림은 GitHub(공개)에 올리지 않고 Firestore에 저장해 <b>로그인한 우리 반 학생만</b> 볼 수 있게 합니다.<br>
+        파일 이름으로 문항을 자동으로 찾습니다(예: p075_q5.png → 익힘 75쪽 5번). 여러 장을 한꺼번에 고르세요.</p>
+      <div class="row"><input type="file" id="fImg" accept="image/*" multiple><button id="btnUpImg">그림 올리기</button></div>
+    </div>
   </section>
 
+  <!-- (문항 그림은 문항·정답 탭 아래 카드에서 올림) -->
   <!-- 채점 규칙 -->
   <section data-pane="policy" class="hidden">
     <div class="card">
@@ -173,7 +223,8 @@ import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.
 import { getAuth, initializeAuth, inMemoryPersistence, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
          createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, writeBatch, serverTimestamp, arrayUnion }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, writeBatch, serverTimestamp, arrayUnion,
+         onSnapshot, query, where, runTransaction, Timestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ── 설정 ───────────────────────────────────────────────
@@ -269,6 +320,8 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-pane]").forEach(p => p.classList.toggle("hidden", p.dataset.pane !== b.dataset.tab));
   if (b.dataset.tab === "cards") renderCards();
   if (b.dataset.tab === "data") refreshDataStatus();
+  if (b.dataset.tab === "assign") fillLessonSelect();
+  if (b.dataset.tab === "results") watchResults();
 });
 
 // ── 학급 ───────────────────────────────────────────────
@@ -291,6 +344,7 @@ async function openClass(id) {
     pins = ps.exists() ? ps.data() : {};
     await loadStudents();
     renderClassInfo();
+    watchAssignments(); startEngine(); watchReviewQueue();
   } catch (e) { log("학급 열기 실패: " + e.code); }
 }
 
@@ -501,13 +555,424 @@ async function refreshDataStatus() {
   try {
     const [qs, ks, ls] = await Promise.all([getDocs(collection(db, "questions")), getDocs(collection(db, "answerKeys")), getDocs(collection(db, "lessons"))]);
     const approved = ks.docs.filter(d => d.data().answerKeyStatus === "approved").length;
+    const imgs = qs.docs.filter(d => d.data().imageData).length;
     const l04 = ls.docs.find(d => d.id === "L04");
-    $("#dataStatus").innerHTML = `문항 <b>${qs.size}</b>개 · 차시 <b>${ls.size}</b>개 · 정답 키 <b>${ks.size}</b>개 (승인 <b>${approved}</b> / 검토 대기 ${ks.size - approved})` +
+    $("#dataStatus").innerHTML = `문항 <b>${qs.size}</b>개 · 차시 <b>${ls.size}</b>개 · 정답 키 <b>${ks.size}</b>개 (승인 <b>${approved}</b> / 검토 대기 ${ks.size - approved}) · 문항 그림 <b>${imgs}</b>장` +
       (l04 ? `<br>4차시: ${l04.data().title} – 문항 ${l04.data().questionIds.length}개` : "") +
       (qs.size === 41 && ks.size >= 41 ? ` <span class="ok">✓ 준비 완료</span>` : "");
   } catch (e) { $("#dataStatus").textContent = "확인 실패: " + e.code; }
 }
 $("#btnRefreshData").onclick = refreshDataStatus;
+
+// ════════════════════════════════════════════════════════════
+//  채점 규칙 (grader-core.js와 동일 – 38개 테스트 통과본)
+// ════════════════════════════════════════════════════════════
+// <grader-core> ── CUBIC CITY 채점 규칙 (reference_grader.py와 같은 결과여야 함) ──
+const CIRCLED = { "㉠":"ㄱ","㉡":"ㄴ","㉢":"ㄷ","㉣":"ㄹ","㉤":"ㅁ","㉥":"ㅂ","㉦":"ㅅ","㉧":"ㅇ" };
+// 직육면체 꼭짓점 이웃 관계(교재 배치: 윗면 ㄱㄴㄷㄹ, 아랫면 ㅁㅂㅅㅇ, 세로 ㄱ-ㅁ·ㄴ-ㅂ·ㄷ-ㅅ·ㄹ-ㅇ)
+const CUBOID_EDGES = new Set(["ㄱㄴ","ㄴㄷ","ㄷㄹ","ㄹㄱ","ㅁㅂ","ㅂㅅ","ㅅㅇ","ㅇㅁ","ㄱㅁ","ㄴㅂ","ㄷㅅ","ㄹㅇ"]
+  .flatMap(e => [e, e[1] + e[0]]));
+function gBase(s) {
+  // 전각 → 반각(FF01~FF5E만). NFKC는 한글 호환 자모를 바꿔 버리므로 쓰지 않음
+  let t = [...String(s ?? "")].map(ch => { const c = ch.codePointAt(0); return (c >= 0xFF01 && c <= 0xFF5E) ? String.fromCodePoint(c - 0xFEE0) : ch; }).join("");
+  t = [...t].map(ch => CIRCLED[ch] || ch).join("");
+  return t.replace(/\s+/g, "");
+}
+function gNormText(s) { return gBase(s).replace(/(\(이\)라고|이라고|라고|입니다|이다|하다고|하다|합니다|한|하)$/, ""); }
+function gNormNumber(s) { const m = gBase(s).match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; }
+function gFaceLetters(s) { return gBase(s).replace(/^면/, ""); }
+function gIsCycle(l) { const a = [...l]; return a.length === 4 && a.every((ch, i) => CUBOID_EDGES.has(ch + a[(i + 1) % 4])); }
+function gSetKey(arr) { return [...new Set(arr.map(gBase))].sort().join("|"); }
+function gFaceKey(s) { return [...gFaceLetters(s)].sort().join(""); }
+
+// 반환: { verdict: "correct"|"wrong"|"review"|"blank", reason }
+function gradePart(rule, student, answer, accepted = []) {
+  const empty = student == null || (typeof student === "string" && student.trim() === "") || (Array.isArray(student) && student.length === 0);
+  if (empty && !(Array.isArray(answer) && answer.length === 0)) return { verdict: "blank", reason: "무응답" };
+  switch (rule) {
+    case "normalized_text": {
+      const c = [answer, ...accepted].map(gNormText);
+      return c.includes(gNormText(student)) ? { verdict: "correct", reason: "일치" } : { verdict: "wrong", reason: "불일치" };
+    }
+    case "numeric": {
+      const v = gNormNumber(student);
+      if (v === null) return { verdict: "review", reason: "숫자 해석 실패" };
+      return v === answer ? { verdict: "correct", reason: "일치" } : { verdict: "wrong", reason: "다른 수" };
+    }
+    case "choice": {
+      const c = [answer, ...accepted].map(gBase);
+      return c.includes(gBase(student)) ? { verdict: "correct", reason: "일치" } : { verdict: "wrong", reason: "다른 선택" };
+    }
+    case "unordered_set": {
+      const st = gSetKey(student);
+      if (st === gSetKey(answer) || accepted.some(a => st === gSetKey(a))) return { verdict: "correct", reason: "집합 일치" };
+      return { verdict: "wrong", reason: "집합 불일치" };
+    }
+    case "face_by_vertex_cycle": {
+      const st = gFaceLetters(student), an = gFaceLetters(answer);
+      if ([...st].length !== 4) return { verdict: "wrong", reason: "글자 수 오류" };
+      if ([...st].sort().join("") !== [...an].sort().join("")) return { verdict: "wrong", reason: "다른 면" };
+      if (gIsCycle(st)) return { verdict: "correct", reason: "둘레 순서(시작점·방향 무관)" };
+      return { verdict: "review", reason: "글자는 맞지만 둘레 순서 아님" };
+    }
+    case "face_set": {
+      const k = (arr) => [...new Set(arr.map(gFaceKey))].sort().join("|");
+      return k(student) === k(answer) ? { verdict: "correct", reason: "집합 일치" } : { verdict: "wrong", reason: "집합 불일치" };
+    }
+    default:
+      return { verdict: "review", reason: "자동 채점 규칙 없음(" + rule + ")" };
+  }
+}
+
+// 4차시(L04) 오답 → 오개념 태그 추정 규칙. 해당 없으면 문항의 첫 태그를 사용.
+function guessTag(qid, pid, student, answer) {
+  const s = Array.isArray(student) ? student.map(gBase) : gBase(student);
+  const has = (face) => Array.isArray(s) && s.some(x => gFaceKey(x) === gFaceKey(face));
+  const id = qid.replace("M52U5-", "");
+  if (id === "WB074-01" && pid === "b") return "MC-BASE-SIDE";
+  if (id === "WB074-02" && pid === "a") return has("ㅁㅂㅅㅇ") ? "MC-BASE-SIDE" : "MC-PERP-FACE-COUNT";
+  if (id === "WB074-02" && pid === "b") return gBase(student).startsWith("5") ? "MC-BASE-SIDE" : "MC-PERP-FACE-COUNT";
+  if (id === "WB075-03" && pid === "a") return "MC-PARALLEL-FACE";
+  if (id === "WB075-03" && pid === "b") return "MC-PARALLEL-PAIRS";
+  if (id === "WB075-04") return "MC-PERP-FACE-COUNT";
+  if (id === "WB075-05" && pid === "a") return "MC-PARALLEL-FACE";
+  if (id === "WB075-05" && pid === "b") { const v = gNormNumber(student); return v === 46 ? "MC-DIM-MAP" : "MC-EDGE-SUM"; }
+  if (id === "WB075-06") {
+    if (pid === "a" && has("ㅁㅂㅅㅇ")) return "MC-PARALLEL-FACE";
+    if (pid === "b" && has("ㄴㅂㅁㄱ")) return "MC-PARALLEL-FACE";
+    if (pid === "c") return "MC-PERP-VISUAL";
+    return "MC-PERP-FACE-COUNT";
+  }
+  return null;
+}
+
+// 문항 하나 채점. key = Firestore answerKeys 문서(answerJson 포함) 또는 같은 모양의 객체
+function gradeQuestion(key, rawAnswers) {
+  const ans = key.answerJson ? JSON.parse(key.answerJson) : { correctAnswer: key.correctAnswer, acceptedAnswers: key.acceptedAnswers };
+  const parts = {}; let score = 0, maxScore = 0, needsReview = false, anyWrong = false;
+  const fbByTag = Object.fromEntries((key.wrongAnswerFeedback || []).map(w => [w.misconceptionTag, w.feedback]));
+  for (const [pid, rule] of Object.entries(key.compareRules)) {
+    const pts = key.partScores?.[pid] ?? 1; maxScore += pts;
+    if (rule === "none") continue;
+    const r = gradePart(rule, rawAnswers?.[pid], ans.correctAnswer[pid], (ans.acceptedAnswers || {})[pid] || []);
+    const p = { verdict: r.verdict, rule, reason: r.reason, score: 0, maxScore: pts };
+    if (r.verdict === "correct") { p.score = pts; score += pts; }
+    else if (r.verdict === "review") { needsReview = true; p.feedback = "선생님이 확인하고 있어요."; }
+    else {
+      anyWrong = true;
+      const tag = guessTag(key.questionId, pid, rawAnswers?.[pid], ans.correctAnswer[pid]) || (key.misconceptionTags || [])[0] || null;
+      p.misconceptionTag = tag;
+      p.feedback = r.verdict === "blank" ? "빈칸이에요. 끝까지 생각해서 써 봐요." : (fbByTag[tag] || "다시 한번 생각해 봐요.");
+    }
+    parts[pid] = p;
+  }
+  return { parts, score, maxScore, needsReview, anyWrong, allCorrect: !needsReview && !anyWrong };
+}
+// </grader-core>
+
+
+// ════════════════════════════════════════════════════════════
+//  과제
+// ════════════════════════════════════════════════════════════
+let assignments = [], asgUnsub = null;
+async function fillLessonSelect() {
+  const sel = $("#asgLesson"); if (sel.options.length) return;
+  try {
+    const ls = await getDocs(collection(db, "lessons"));
+    ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => (l.questionIds || []).length).sort((a, b) => a.id.localeCompare(b.id))
+      .forEach(l => { const o = document.createElement("option"); o.value = l.id; o.textContent = `${l.id} ${l.title} (${l.questionIds.length}문항)`; sel.appendChild(o); });
+    sel.value = "L04";
+  } catch (e) { log("차시 목록 실패: " + e.code); }
+}
+function watchAssignments() {
+  if (asgUnsub) asgUnsub();
+  asgUnsub = onSnapshot(collection(db, "classes", cls.id, "assignments"), snap => {
+    assignments = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    snap.docs.forEach(d => { asgCache[d.id] = { id: d.id, ...d.data() }; });
+    renderAssignments(); fillResAsg();
+  }, e => log("과제 구독 오류: " + e.code));
+}
+const ST_KO = { draft: "준비", open: "열림", closed: "마감" };
+function renderAssignments() {
+  const tb = $("#asgRows");
+  if (!assignments.length) { tb.innerHTML = `<tr><td colspan="4" class="muted">아직 과제가 없습니다.</td></tr>`; return; }
+  tb.innerHTML = assignments.map(a => `<tr><td><b>${a.title}</b><div class="muted">교과서 ${a.textbookPages || "-"} · 익힘 ${a.workbookPages || "-"}</div></td>
+    <td>${(a.questionIds || []).length}</td>
+    <td><span class="pill ${a.status === "open" ? "ok" : ""}">${ST_KO[a.status] || a.status}</span></td>
+    <td>${a.status === "open" ? `<button class="danger" data-close="${a.id}">마감</button>` : `<button data-open="${a.id}">열기</button>`}</td></tr>`).join("");
+  tb.querySelectorAll("[data-close]").forEach(b => b.onclick = () => setAsgStatus(b.dataset.close, "closed"));
+  tb.querySelectorAll("[data-open]").forEach(b => b.onclick = () => setAsgStatus(b.dataset.open, "open"));
+}
+async function setAsgStatus(id, st) {
+  try { await updateDoc(doc(db, "classes", cls.id, "assignments", id), { status: st, ...(st === "closed" ? { closedAt: serverTimestamp() } : { closedAt: null }) }); log(`과제 ${ST_KO[st]}`); }
+  catch (e) { log("과제 상태 변경 실패: " + e.code); }
+}
+$("#btnCreateAsg").onclick = async () => {
+  if (!cls) return alert("학급을 먼저 만드세요.");
+  const L = $("#asgLesson").value; if (!L) return alert("문항을 먼저 올리세요.");
+  const ld = (await getDoc(doc(db, "lessons", L))).data();
+  if (assignments.some(a => a.lessonId === L && a.status === "open") && !confirm("이 차시에 이미 열린 과제가 있습니다. 하나 더 만들까요?")) return;
+  // 미승인 정답 키 경고
+  const keys = await Promise.all(ld.questionIds.map(q => getDoc(doc(db, "answerKeys", q))));
+  const pending = keys.filter(k => !k.exists() || k.data().answerKeyStatus !== "approved").map(k => k.id.replace("M52U5-", ""));
+  if (pending.length && !confirm(`정답 키가 승인되지 않은 문항이 있습니다: ${pending.join(", ")}\n채점 결과가 '임시'로 표시됩니다. 계속할까요?`)) return;
+  try {
+    await addDoc(collection(db, "classes", cls.id, "assignments"), {
+      lessonId: L, title: `${L.replace("L0", "").replace("L", "")}차시 ${ld.title}`, textbookPages: ld.textbookPages, workbookPages: ld.workbookPages,
+      questionIds: ld.questionIds, components: { story: false, lab: false, workbook: true },
+      policy: { maxAttempts: GRADING_POLICY.maxAttempts, requireNoteBeforeRetry: GRADING_POLICY.requireNoteBeforeRetry, revealAnswer: "afterDue" },
+      status: "open", createdAt: serverTimestamp(), createdBy: me.email
+    });
+    log(`${L} 과제를 만들고 열었습니다.`);
+  } catch (e) { log("과제 만들기 실패: " + e.code); alert("과제 만들기 실패: " + e.code); }
+};
+
+// ════════════════════════════════════════════════════════════
+//  채점 엔진 (교사 기기에서 동작 – 무료 Spark 요금제 설계)
+// ════════════════════════════════════════════════════════════
+const sessionId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+const keyCache = {}, asgCache = {};
+let engineUnsub = null, staleTimer = null, gradeQueue = [], working = false, gradedCount = 0;
+function setEngineState(err) {
+  const el = $("#engineState"); el.classList.remove("hidden");
+  if (err) { el.className = "pill bad"; el.textContent = "⚠ 채점 엔진 오류 – 새로고침"; return; }
+  if (!engineUnsub) { el.className = "pill"; el.textContent = "○ 채점 엔진 꺼짐"; return; }
+  el.className = "pill ok"; el.textContent = `● 채점 중 · 대기 ${gradeQueue.length + (working ? 1 : 0)}건 · 오늘 ${gradedCount}건`;
+}
+function stopEngine() { if (engineUnsub) engineUnsub(); engineUnsub = null; clearInterval(staleTimer); gradeQueue = []; setEngineState(); }
+function startEngine() {
+  stopEngine(); if (!cls) return;
+  engineUnsub = onSnapshot(query(collection(db, "classes", cls.id, "submissions"), where("status", "==", "submitted")),
+    snap => { snap.docs.forEach(d => enqueue(d.id)); setEngineState(); },
+    e => { log("채점 엔진 구독 오류: " + e.code); setEngineState(true); });
+  staleTimer = setInterval(rescueStale, 30000); rescueStale(); setEngineState();
+  log("채점 엔진 시작");
+}
+function enqueue(id) { if (!gradeQueue.includes(id)) { gradeQueue.push(id); pump(); } }
+async function pump() {
+  if (working) return; working = true;
+  while (gradeQueue.length) {
+    const id = gradeQueue.shift(); setEngineState();
+    try { await gradeSubmission(id); } catch (e) { log(`채점 오류(${id.slice(0, 8)}): ${e.code || e.message}`); }
+  }
+  working = false; setEngineState();
+}
+async function rescueStale() {
+  try {
+    const qs = await getDocs(query(collection(db, "classes", cls.id, "submissions"), where("status", "==", "grading")));
+    qs.docs.forEach(d => { const t = d.data().grader?.claimedAt?.toMillis?.() || 0; if (Date.now() - t > 60000) enqueue(d.id); });
+  } catch (_) {}
+}
+window.addEventListener("beforeunload", (e) => { if (gradeQueue.length || working) { e.preventDefault(); e.returnValue = ""; } });
+
+async function getKey(qid) {
+  if (!keyCache[qid]) { const s = await getDoc(doc(db, "answerKeys", qid)); keyCache[qid] = s.exists() ? s.data() : null; }
+  return keyCache[qid];
+}
+async function getAsg(aid) {
+  if (!asgCache[aid]) { const s = await getDoc(doc(db, "classes", cls.id, "assignments", aid)); asgCache[aid] = s.exists() ? { id: aid, ...s.data() } : null; }
+  return asgCache[aid];
+}
+const tsMs = (t) => t?.toMillis?.() || 0;
+
+async function gradeSubmission(id) {
+  const ref = doc(db, "classes", cls.id, "submissions", id);
+  // ① 잡기(트랜잭션) – 교사 창이 여러 개여도 한 번만 채점
+  const sub = await runTransaction(db, async tx => {
+    const s = await tx.get(ref); if (!s.exists()) return null;
+    const d = s.data();
+    const stale = d.status === "grading" && Date.now() - tsMs(d.grader?.claimedAt) > 60000;
+    if (d.status !== "submitted" && !stale) return null;
+    tx.update(ref, { status: "grading", grader: { sessionId, claimedAt: Timestamp.now() } });
+    return d;
+  });
+  if (!sub) return;
+  const reject = (reason, text) => updateDoc(ref, { status: "rejected", rejectReason: reason, feedback: [{ partId: "*", text }], grader: { sessionId, gradedAt: Timestamp.now() } })
+    .then(() => log(`${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace("M52U5-", "")} 거절: ${text}`));
+
+  // ② 검증
+  const asg = await getAsg(sub.assignmentId);
+  if (!asg) return reject("no_assignment", "과제를 찾을 수 없어요.");
+  if (!(asg.questionIds || []).includes(sub.questionId)) return reject("not_in_assignment", "이 과제의 문제가 아니에요.");
+  const fresh = (await getDoc(doc(db, "classes", cls.id, "assignments", sub.assignmentId))).data(); asgCache[sub.assignmentId] = { id: sub.assignmentId, ...fresh };
+  if (fresh.status !== "open") {
+    const ok = fresh.status === "closed" && tsMs(fresh.closedAt) && tsMs(sub.submittedAt) <= tsMs(fresh.closedAt) + 60000;
+    if (!ok) return reject("closed", "과제가 마감되었어요.");
+  }
+  const policy = { ...GRADING_POLICY, ...(cls.settings?.grading || {}), ...(fresh.policy || {}) };
+  const prevSnap = await getDocs(query(collection(db, "classes", cls.id, "submissions"), where("studentId", "==", sub.studentId), where("questionId", "==", sub.questionId)));
+  const prev = prevSnap.docs.filter(d => d.id !== id).map(d => d.data()).filter(d => ["graded", "pending_review"].includes(d.status));
+  if (prev.some(p => p.allCorrect)) return reject("already_correct", "이미 맞힌 문제예요.");
+  if (prev.length >= policy.maxAttempts) return reject("max_attempts", `한 문제는 ${policy.maxAttempts}번까지 풀 수 있어요.`);
+  const noteRef = doc(db, "classes", cls.id, "wrongNotes", `${sub.studentId}_${sub.questionId}`);
+  const noteSnap = await getDoc(noteRef);
+  if (prev.length > 0 && policy.requireNoteBeforeRetry && (!noteSnap.exists() || !["submitted", "resolved"].includes(noteSnap.data().status)))
+    return reject("note_required", "오답노트를 먼저 써서 제출해요.");
+
+  // ③ 채점
+  const key = await getKey(sub.questionId);
+  if (!key) return reject("no_key", "아직 채점 준비가 안 된 문제예요. 선생님께 알려 주세요.");
+  const g = gradeQuestion(key, sub.rawAnswers || {});
+  const attemptNo = prev.length + 1;
+  const partResults = Object.fromEntries(Object.entries(g.parts).map(([pid, p]) => [pid, {
+    correct: p.verdict === "correct" ? true : p.verdict === "review" ? null : false, verdict: p.verdict,
+    score: p.score, maxScore: p.maxScore, rule: p.rule, reason: p.reason,
+    misconceptionTag: p.misconceptionTag || null, needsReview: p.verdict === "review", feedback: p.feedback || null }]));
+  const tags = [...new Set(Object.values(g.parts).map(p => p.misconceptionTag).filter(Boolean))];
+
+  // ④ 일괄 저장
+  const b = writeBatch(db);
+  b.update(ref, {
+    status: g.needsReview ? "pending_review" : "graded", attemptNo, isRetry: attemptNo > 1,
+    partResults, score: g.score, maxScore: g.maxScore, allCorrect: g.allCorrect,
+    provisional: key.answerKeyStatus !== "approved", answerKeyVersion: key.version || 1,
+    feedback: Object.entries(g.parts).filter(([, p]) => p.feedback).map(([pid, p]) => ({ partId: pid, text: p.feedback })),
+    grader: { sessionId, gradedAt: Timestamp.now() }
+  });
+  const wb = { attempts: attemptNo, lastScore: g.score, maxScore: g.maxScore, solved: g.allCorrect, at: Timestamp.now() };
+  if (attemptNo === 1) wb.firstScore = g.score;
+  b.set(doc(db, "classes", cls.id, "progress", `${sub.studentId}_${sub.assignmentId}`),
+    { studentId: sub.studentId, assignmentId: sub.assignmentId, workbook: { [sub.questionId]: wb }, updatedAt: serverTimestamp() }, { merge: true });
+  const hist = { submissionId: id, attemptNo, answers: sub.rawAnswers || {}, score: g.score, maxScore: g.maxScore, allCorrect: g.allCorrect, at: Timestamp.now() };
+  if (noteSnap.exists()) {
+    b.update(noteRef, {
+      attemptHistory: arrayUnion(hist), "retry.count": attemptNo - 1, "retry.lastResult": g.allCorrect ? "correct" : g.needsReview ? "review" : "wrong",
+      ...(g.allCorrect ? { status: "resolved", "retry.resolvedAt": Timestamp.now(), helpNeeded: false } : {}),
+      ...(g.anyWrong ? { status: "writing", helpNeeded: attemptNo >= 3 || (attemptNo >= 2), ...(tags.length ? { autoMisconceptionTags: arrayUnion(...tags) } : {}) } : {}),
+      updatedAt: serverTimestamp()
+    });
+  } else if (g.anyWrong) {
+    b.set(noteRef, {
+      studentId: sub.studentId, questionId: sub.questionId, lessonId: sub.lessonId || null, assignmentId: sub.assignmentId,
+      wrongParts: Object.entries(g.parts).filter(([, p]) => ["wrong", "blank"].includes(p.verdict)).map(([pid]) => pid),
+      firstAnswer: sub.rawAnswers || {}, autoMisconceptionTags: tags, attemptHistory: [hist],
+      status: "auto_created", retry: { count: 0, lastResult: "wrong" }, helpNeeded: false, hints: [], hintsUsed: 0,
+      errorReasonType: "", errorReasonText: "", missedConcepts: [], correctMethodText: "", nextTimeTip: "",
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    });
+  }
+  Object.entries(g.parts).filter(([, p]) => p.verdict === "review").forEach(([pid, p]) => {
+    b.set(doc(collection(db, "classes", cls.id, "reviewQueue")), {
+      submissionId: id, studentId: sub.studentId, questionId: sub.questionId, partId: pid,
+      rawAnswer: JSON.stringify(sub.rawAnswers?.[pid] ?? ""), reason: p.reason, status: "open", createdAt: serverTimestamp() });
+  });
+  await b.commit();
+  gradedCount++;
+  log(`채점: ${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace("M52U5-", "")} ${attemptNo}회차 → ${g.score}/${g.maxScore}${g.needsReview ? " (확인 필요)" : ""}`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  채점 현황(학생 × 문항) + 선생님 확인 대기
+// ════════════════════════════════════════════════════════════
+let resUnsub = null, rqUnsub = null;
+function fillResAsg() {
+  const sel = $("#resAsg"), cur = sel.value; sel.innerHTML = "";
+  assignments.forEach(a => { const o = document.createElement("option"); o.value = a.id; o.textContent = `${a.title} (${ST_KO[a.status]})`; sel.appendChild(o); });
+  if (cur && assignments.some(a => a.id === cur)) sel.value = cur;
+  if (!$('[data-pane="results"]').classList.contains("hidden") && (!resUnsub || sel.value !== cur)) watchResults();
+}
+$("#resAsg").onchange = () => watchResults();
+function watchResults() {
+  if (resUnsub) resUnsub(); const aid = $("#resAsg").value;
+  if (!aid) { $("#resRows").innerHTML = `<tr><td class="muted">과제가 없습니다.</td></tr>`; return; }
+  const asg = assignments.find(a => a.id === aid);
+  resUnsub = onSnapshot(query(collection(db, "classes", cls.id, "submissions"), where("assignmentId", "==", aid)), snap => {
+    const subs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const qids = asg.questionIds || [];
+    $("#resHead").innerHTML = `<tr><th>번호</th><th>모둠</th>${qids.map(q => `<th>${q.replace("M52U5-WB0", "").replace("M52U5-", "")}</th>`).join("")}<th>첫 시도</th><th>최종</th></tr>`;
+    const firstOk = Object.fromEntries(qids.map(q => [q, [0, 0]]));
+    $("#resRows").innerHTML = students.map(st => {
+      let f = 0, fin = 0, max = 0;
+      const cells = qids.map(q => {
+        const mine = subs.filter(s => s.studentId === st.id && s.questionId === q).sort((a, b) => tsMs(a.submittedAt) - tsMs(b.submittedAt));
+        const done = mine.filter(s => ["graded", "pending_review"].includes(s.status));
+        if (done[0]) { firstOk[q][1]++; if (done[0].allCorrect) firstOk[q][0]++; f += done[0].score || 0; }
+        const last = done[done.length - 1]; if (last) { fin += last.score || 0; max += last.maxScore || 0; }
+        if (mine.some(s => ["submitted", "grading"].includes(s.status))) return `<td><span class="cell c-wait">…</span></td>`;
+        if (!done.length) return `<td class="muted">–</td>`;
+        if (last.status === "pending_review") return `<td><span class="cell c-rev">확인</span></td>`;
+        if (done.some(s => s.allCorrect)) return `<td><span class="cell c-ok">○${done.length > 1 ? done.length : ""}</span></td>`;
+        return `<td><span class="cell c-bad">×${done.length}</span></td>`;
+      }).join("");
+      return `<tr><td><b>${st.studentNo}번</b></td><td class="muted">${st.group || "–"}</td>${cells}<td>${f}</td><td>${fin}${max ? "/" + max : ""}</td></tr>`;
+    }).join("");
+    $("#resFoot").innerHTML = `<tr><th>첫 시도 정답률</th><th></th>${qids.map(q => { const [o, n] = firstOk[q]; return `<th>${n ? Math.round(o / n * 100) + "%" : "–"}<div class="muted">${o}/${n}</div></th>`; }).join("")}<th></th><th></th></tr>`;
+  }, e => log("채점 현황 구독 오류: " + e.code));
+}
+function watchReviewQueue() {
+  if (rqUnsub) rqUnsub();
+  rqUnsub = onSnapshot(query(collection(db, "classes", cls.id, "reviewQueue"), where("status", "==", "open")), snap => {
+    $("#rqCount").textContent = snap.size + "건";
+    if (!snap.size) { $("#rqList").innerHTML = "없음"; return; }
+    $("#rqList").innerHTML = snap.docs.map(d => { const r = d.data();
+      return `<div class="rq"><b>${Number(r.studentId.slice(1))}번</b> <span>${r.questionId.replace("M52U5-", "")} (${r.partId})</span>
+        <span>학생 답: <code>${JSON.parse(r.rawAnswer || '""')}</code></span><span class="muted">${r.reason}</span>
+        <button data-rv="${d.id}" data-ok="1">정답 처리</button><button class="danger" data-rv="${d.id}" data-ok="0">오답 처리</button></div>`; }).join("");
+    $("#rqList").querySelectorAll("[data-rv]").forEach(b => b.onclick = () => resolveReview(b.dataset.rv, b.dataset.ok === "1"));
+  }, e => log("확인 대기 구독 오류: " + e.code));
+}
+async function resolveReview(rid, correct) {
+  try {
+    const rref = doc(db, "classes", cls.id, "reviewQueue", rid); const r = (await getDoc(rref)).data();
+    const sref = doc(db, "classes", cls.id, "submissions", r.submissionId); const s = (await getDoc(sref)).data();
+    const pr = { ...s.partResults }; const p = pr[r.partId];
+    pr[r.partId] = { ...p, correct, verdict: correct ? "correct" : "wrong", needsReview: false, score: correct ? p.maxScore : 0,
+      feedback: correct ? null : "선생님이 확인했어요. 면 이름은 꼭짓점을 둘레를 따라 차례대로 읽어요.", misconceptionTag: correct ? null : (p.misconceptionTag || "MC-FACE-NAMING"), resolvedBy: "teacher" };
+    const vals = Object.values(pr);
+    const still = vals.some(v => v.needsReview), score = vals.reduce((a, v) => a + (v.score || 0), 0);
+    const allCorrect = !still && vals.every(v => v.correct === true);
+    const b = writeBatch(db);
+    b.update(sref, { partResults: pr, score, allCorrect, status: still ? "pending_review" : "graded",
+      feedback: Object.entries(pr).filter(([, v]) => v.feedback).map(([pid, v]) => ({ partId: pid, text: v.feedback })),
+      teacherOverride: { parts: { [r.partId]: correct ? "correct" : "wrong" }, reason: "확인 대기 처리", by: me.email, at: Timestamp.now() } });
+    b.update(rref, { status: "resolved", resolution: correct ? "correct" : "wrong", resolvedAt: serverTimestamp() });
+    b.set(doc(collection(db, "classes", cls.id, "auditLogs")), { type: "reviewResolve", submissionId: r.submissionId, partId: r.partId, correct, by: me.email, at: serverTimestamp() });
+    const wb = { lastScore: score, solved: allCorrect, at: Timestamp.now() }; if ((s.attemptNo || 1) === 1) wb.firstScore = score;
+    b.set(doc(db, "classes", cls.id, "progress", `${s.studentId}_${s.assignmentId}`), { workbook: { [s.questionId]: wb }, updatedAt: serverTimestamp() }, { merge: true });
+    // 오답으로 확정되었는데 오답노트가 없으면 만든다
+    if (!still && !allCorrect) {
+      const nref = doc(db, "classes", cls.id, "wrongNotes", `${s.studentId}_${s.questionId}`);
+      const n = await getDoc(nref);
+      const hist = { submissionId: r.submissionId, attemptNo: s.attemptNo || 1, answers: s.rawAnswers || {}, score, maxScore: s.maxScore, allCorrect: false, at: Timestamp.now() };
+      if (!n.exists()) b.set(nref, { studentId: s.studentId, questionId: s.questionId, lessonId: s.lessonId || null, assignmentId: s.assignmentId,
+        wrongParts: Object.entries(pr).filter(([, v]) => v.correct === false).map(([pid]) => pid), firstAnswer: s.rawAnswers || {},
+        autoMisconceptionTags: [...new Set(Object.values(pr).map(v => v.misconceptionTag).filter(Boolean))], attemptHistory: [hist],
+        status: "auto_created", retry: { count: 0, lastResult: "wrong" }, helpNeeded: false, hints: [], hintsUsed: 0,
+        errorReasonType: "", errorReasonText: "", missedConcepts: [], correctMethodText: "", nextTimeTip: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      else b.update(nref, { status: "writing", attemptHistory: arrayUnion(hist), "retry.lastResult": "wrong", updatedAt: serverTimestamp() });
+    }
+    await b.commit(); log(`확인 처리: ${r.questionId.replace("M52U5-", "")} ${r.partId} → ${correct ? "정답" : "오답"}`);
+  } catch (e) { log("확인 처리 실패: " + (e.code || e.message)); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  문항 그림 올리기(Firestore에 압축 저장 – 공개 저장소에 올리지 않음)
+// ════════════════════════════════════════════════════════════
+async function compressImage(file, maxW = 1000) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxW / bmp.width);
+  const c = document.createElement("canvas"); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  let url = c.toDataURL("image/webp", 0.85);
+  if (!url.startsWith("data:image/webp")) url = c.toDataURL("image/jpeg", 0.85);
+  return url;
+}
+$("#btnUpImg").onclick = async () => {
+  const files = [...$("#fImg").files]; if (!files.length) return alert("그림 파일을 고르세요.");
+  try {
+    const qs = await getDocs(collection(db, "questions"));
+    const byName = {}; qs.docs.forEach(d => { const img = d.data().questionImage; if (img) byName[img.split("/").pop()] = d.id; });
+    let ok = 0;
+    for (const f of files) {
+      const qid = byName[f.name]; if (!qid) { log(`그림 ${f.name}: 맞는 문항을 찾지 못함`); continue; }
+      const url = await compressImage(f);
+      if (url.length > 900000) { log(`그림 ${f.name}: 너무 큼(${Math.round(url.length / 1024)}KB)`); continue; }
+      await updateDoc(doc(db, "questions", qid), { imageData: url });
+      ok++; log(`그림 ${f.name} → ${qid.replace("M52U5-", "")} (${Math.round(url.length / 1024)}KB)`);
+    }
+    alert(`그림 ${ok}장 올리기 완료`); refreshDataStatus();
+  } catch (e) { log("그림 올리기 실패: " + (e.code || e.message)); }
+};
 
 // ── 채점 규칙 ──────────────────────────────────────────
 const POLICY_ROWS = [
