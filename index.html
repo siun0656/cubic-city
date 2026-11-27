@@ -79,6 +79,18 @@
   .chips { display:flex; flex-wrap:wrap; gap:8px; }
   .chip { padding:10px 16px; border-radius:12px; background:#eef1f8; font-size:19px; min-height:50px; color:var(--ink); }
   .chip.on { background:#2f6ff0; color:#fff; }
+  .frac { display:inline-flex; flex-direction:column; align-items:center; line-height:1; vertical-align:middle; font-size:.85em; }
+  .frac i { font-style:normal; } .frac i:first-child { border-bottom:2px solid currentColor; padding:0 3px 1px; }
+  .bg { display:grid; gap:4px; margin-top:6px; } .bg .row { display:grid; grid-template-columns:88px 1fr 44px; align-items:center; gap:8px; }
+  .bg .lb { font-size:17px; font-weight:700; text-align:right; } .bg .val { font-size:17px; color:var(--sub); }
+  .bg .cells { display:grid; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#fff; }
+  .bg .cells button { height:40px; border-right:1px solid #eef1f8; background:#fff; padding:0; min-width:0; }
+  .bg .cells button.f { background:#f39ab0; } .bg .axis { display:grid; grid-template-columns:88px 1fr 44px; gap:8px; font-size:14px; color:var(--sub); }
+  .bg .axis .sc { position:relative; height:18px; } .bg .axis .sc span { position:absolute; transform:translateX(-50%); }
+  .sp { display:flex; gap:18px; align-items:center; flex-wrap:wrap; } .sp svg { width:230px; height:230px; touch-action:manipulation; }
+  .sp svg path { cursor:pointer; stroke:#1d2433; stroke-width:2; } .sp .pal { display:flex; flex-direction:column; gap:8px; }
+  .sp .pal button { min-height:50px; padding:0 18px; border-radius:12px; font-size:19px; font-weight:700; background:#eef1f8; color:var(--ink); border:3px solid transparent; }
+  .sp .pal button.on { border-color:#1d2433; }
   .face { display:flex; gap:8px; align-items:center; font-size:22px; }
   .face .bx { width:50px; height:54px; border-radius:12px; background:#fff; box-shadow:inset 0 0 0 2px var(--line); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; }
   .kp { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; } .kp button { width:52px; height:50px; border-radius:12px; background:#eef1f8; font-size:22px; font-weight:800; color:var(--ink); }
@@ -108,7 +120,7 @@
 <section id="vLogin" class="hidden">
   <div class="hero">
     <h1>CUBIC CITY</h1>
-    <p>직육면체의 도시에 온 것을 환영해요!</p>
+    <p>직육면체와 평균·가능성을 배우는 도시에 온 것을 환영해요!</p>
     <div class="cubes">🧊📦🎲</div>
   </div>
   <div class="panel">
@@ -315,6 +327,8 @@ const CONCEPTS = {
   "MC-DIM-MAP": "길이가 어느 모서리의 길이인지 그림에서 확인한다",
   "MC-EDGE-SUM": "면의 모서리 4개의 길이를 모두 더한다"
 };
+// 오답노트 ② 개념 고르기: 4차시는 정리된 개념 문장, 그 밖의 문항은 문항의 관련 개념
+const conceptList = (q) => q?.lesson === "L04" ? Object.entries(CONCEPTS) : (q?.relatedConcept || []).map(c => [c, c]);
 const REASONS = [["calc", "계산 실수"], ["misread", "문제를 잘못 읽음"], ["concept", "개념을 몰랐음"], ["figure", "그림을 잘못 봄"], ["other", "기타"]];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const msOf = (t) => t?.toMillis?.() || Date.now() + 1e9;   // 아직 서버 시각이 없는(보내는 중) 제출은 맨 뒤로
@@ -450,7 +464,7 @@ function partUI(p, ans) {
   const mark = /△표/.test(p.prompt) ? "△ " : /○표/.test(p.prompt) ? "○ " : "";
   if (p.inputType === "single_choice" || p.inputType === "ox") {
     const c = document.createElement("div"); c.className = "chips";
-    opts.forEach(o => { const b = document.createElement("button"); b.className = "chip"; b.textContent = o;
+    opts.forEach(o => { const b = document.createElement("button"); b.className = "chip"; b.innerHTML = fracHtml(o);
       b.onclick = () => { ans[p.partId] = o; c.querySelectorAll(".chip").forEach(x => x.classList.toggle("on", x === b)); }; c.appendChild(b); });
     w.appendChild(c);
   } else if (p.inputType === "multi_select") {
@@ -484,6 +498,10 @@ function partUI(p, ans) {
     const del = document.createElement("button"); del.className = "wide"; del.textContent = "⌫ 지우기"; del.onclick = () => { letters = letters.slice(0, -1); draw(); }; kp.appendChild(del);
     w.appendChild(f); w.appendChild(kp);
     const tip = document.createElement("div"); tip.className = "alt"; tip.textContent = "꼭짓점을 둘레를 따라 차례대로 눌러요."; w.appendChild(tip);
+  } else if (p.inputType === "bar_graph") {
+    w.appendChild(barGraphUI(p, ans));
+  } else if (p.inputType === "spinner_paint") {
+    w.appendChild(spinnerUI(p, ans));
   } else if (p.inputType === "number") {
     const r = document.createElement("div"); r.className = "numrow";
     r.innerHTML = `<input class="tx" inputmode="decimal" autocomplete="off"><span class="unit">${esc(p.unit || "")}</span>`;
@@ -547,6 +565,46 @@ function drawBackground(ctx, bg, w, h) {
   if (bg === "tri") { ctx.fillStyle = "#b9c2d8"; const dy = S * Math.sqrt(3) / 2; for (let r = 0, y = 0; y <= h; r++, y += dy) for (let x = (r % 2) * S / 2; x <= w; x += S) { ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill(); } }
   ctx.restore();
 }
+// 분수 보기: "1/2" → 위아래 분수
+function fracHtml(o) { const m = String(o).match(/^(\d+)\/(\d+)$/); return m ? `<span class="frac"><i>${m[1]}</i><i>${m[2]}</i></span>` : esc(o); }
+
+// 막대그래프 입력: 칸을 눌러 막대 길이 정하기(같은 칸을 다시 누르면 한 칸 줄어듦)
+function barGraphUI(p, ans) {
+  const cfg = p.config || {}, cats = cfg.categories || [], max = cfg.max || 10;
+  const vals = cats.map(() => 0);
+  const el = document.createElement("div"); el.className = "bg";
+  const rows = cats.map((c, ri) => {
+    const r = document.createElement("div"); r.className = "row";
+    r.innerHTML = `<span class="lb">${esc(c)}</span><div class="cells" style="grid-template-columns:repeat(${max},1fr)"></div><span class="val">0</span>`;
+    const cells = r.querySelector(".cells");
+    for (let i = 1; i <= max; i++) { const b = document.createElement("button"); b.setAttribute("aria-label", `${c} ${i}`);
+      b.onclick = () => { vals[ri] = vals[ri] === i ? i - 1 : i; paint(); ans[p.partId] = vals.slice(); }; cells.appendChild(b); }
+    el.appendChild(r); return r;
+  });
+  const ax = document.createElement("div"); ax.className = "axis";
+  ax.innerHTML = `<div></div><div class="sc">${Array.from({ length: max + 1 }, (_, i) => i % 5 === 0 ? `<span style="left:${i / max * 100}%">${i}</span>` : "").join("")}</div><div>(${esc(cfg.unit || "")})</div>`;
+  el.appendChild(ax);
+  function paint() { rows.forEach((r, ri) => { [...r.querySelectorAll(".cells button")].forEach((b, i) => b.classList.toggle("f", i < vals[ri])); r.querySelector(".val").textContent = vals[ri]; }); }
+  const tip = document.createElement("div"); tip.className = "alt"; tip.textContent = "막대 끝이 될 칸을 눌러요. 같은 칸을 다시 누르면 한 칸 줄어요."; el.appendChild(tip);
+  return el;
+}
+
+// 회전판 색칠: 색을 고른 뒤 칸을 눌러 칠하기(같은 색으로 다시 누르면 지워짐)
+function spinnerUI(p, ans) {
+  const cfg = p.config || {}, n = cfg.sectors || 5, colors = cfg.colors || ["빨강", "초록"];
+  const HEX = { 빨강: "#ef4b3f", 초록: "#3bb273", 노랑: "#f7d23e", 파랑: "#4fa3e8", 보라: "#8e6bd1", 주황: "#f39a2b" };
+  const fill = Array(n).fill(""); let curC = colors[0];
+  const el = document.createElement("div"); el.className = "sp";
+  const R = 100, C = 110, pt = (a) => [C + R * Math.sin(a), C - R * Math.cos(a)];
+  const paths = Array.from({ length: n }, (_, i) => { const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+    return `<path data-i="${i}" d="M${C},${C} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="#fff"/>`; }).join("");
+  el.innerHTML = `<svg viewBox="0 0 220 220">${paths}<line x1="${C}" y1="${C}" x2="${C}" y2="${C - 70}" stroke="#1d2433" stroke-width="4"/><polygon points="${C - 8},${C - 62} ${C},${C - 80} ${C + 8},${C - 62}" fill="#1d2433"/><circle cx="${C}" cy="${C}" r="5" fill="#1d2433"/></svg>
+    <div class="pal">${colors.map((c, i) => `<button data-c="${esc(c)}" class="${i ? "" : "on"}" style="background:${HEX[c] || "#eee"};color:#fff">${esc(c)}</button>`).join("")}<span class="alt" style="margin:0">색을 고르고 칸을 눌러요</span></div>`;
+  el.querySelectorAll("[data-c]").forEach(b => b.onclick = () => { curC = b.dataset.c; el.querySelectorAll("[data-c]").forEach(x => x.classList.toggle("on", x === b)); });
+  el.querySelectorAll("path").forEach(pa => pa.onclick = () => { const i = +pa.dataset.i; fill[i] = fill[i] === curC ? "" : curC; pa.setAttribute("fill", fill[i] ? HEX[fill[i]] || "#ccc" : "#fff"); ans[p.partId] = fill.slice(); });
+  return el;
+}
+
 function drawPad(bg) {
   const W = 640, H = 420;
   const el = document.createElement("div"); el.className = "dp";
@@ -592,7 +650,7 @@ function renderResult() {
   } else {
     const pr = s.partResults || {}; const st = qState(qid);
     const lines = (q.parts || []).map(p => { const r = pr[p.partId] || {};
-      const m = r.correct === true ? ["o", "○"] : r.correct === false ? ["x", "×"] : ["w", "⏳"];
+      const m = r.correct === true ? ["o", "○"] : r.correct === false ? ["x", "×"] : (p.score === 0 && !pr[p.partId]) ? ["w", "✎"] : ["w", "⏳"];
       return `<div class="rline"><span class="mark ${m[0]}">${m[1]}</span><div style="flex:1"><div><b>${(q.parts.length > 1 ? `(${p.partId}) ` : "")}</b>${esc(p.prompt)}</div>
         <div class="hint" style="margin:4px 0 0">내 답: <b>${esc(fmtAns(s.rawAnswers?.[p.partId]))}</b>${p.unit && s.rawAnswers?.[p.partId] ? " " + esc(p.unit) : ""}</div>
         ${r.feedback ? `<div class="fb">💬 ${esc(r.feedback)}</div>` : ""}</div></div>`; }).join("");
@@ -652,7 +710,7 @@ function openNote(qid) {
     <div class="seg" id="nReason">${REASONS.map(([k, v]) => `<button class="chip ${d.errorReasonType === k ? "on" : ""}" data-r="${k}" ${dis}>${v}</button>`).join("")}</div>
     <input class="tx" id="nReasonText" placeholder="더 자세히 써도 좋아요" value="${esc(d.errorReasonText)}" ${dis}>
     <div class="nlabel">② 어떤 개념을 놓쳤나요?</div>
-    <div class="seg" id="nConcepts">${Object.entries(CONCEPTS).map(([k, v]) => `<button class="chip ${d.missedConcepts.includes(k) ? "on" : ""}" data-c="${k}" ${dis} style="font-size:16px;text-align:left">${v}</button>`).join("")}</div>
+    <div class="seg" id="nConcepts">${conceptList(q).map(([k, v]) => `<button class="chip ${d.missedConcepts.includes(k) ? "on" : ""}" data-c="${k}" ${dis} style="font-size:16px;text-align:left">${v}</button>`).join("")}</div>
     <div class="nlabel">③ 올바른 해결 방법은? <span class="hint" style="font-size:15px">(손글씨는 다음 업데이트에서 열려요)</span></div>
     <textarea class="tx" id="nMethod" placeholder="어떻게 풀어야 맞을지 차례대로 써 봐요" ${dis}>${esc(d.correctMethodText)}</textarea>
     <div class="nlabel">④ 다음에는 무엇을 주의할까요?</div>

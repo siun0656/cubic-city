@@ -522,11 +522,11 @@ async function commitInChunks(ops) {   // ops: [ref, data]
 $("#btnUp05").onclick = async () => {
   try {
     const j = await readJsonFile($("#f05"));
-    if (j?.meta?.unitId !== "M52-U5" || !Array.isArray(j.questions)) throw new Error("05_question_bank.json 형식이 아닙니다.");
+    if (!["M52-U5", "M52-U6"].includes(j?.meta?.unitId) || !Array.isArray(j.questions)) throw new Error("05_question_bank.json 형식이 아닙니다.");
     if (JSON.stringify(j).includes('"correctAnswer"')) throw new Error("정답이 들어 있는 파일입니다. 05 파일을 고르세요.");
     const ops = j.questions.map(q => [doc(db, "questions", q.questionId), { ...q, uploadedAt: serverTimestamp() }]);
     for (const [L, v] of Object.entries(j.meta.lessons || {})) {
-      ops.push([doc(db, "lessons", L), { lessonId: L, unit: j.meta.unitId, title: v.title, textbookPages: v.textbookPages, workbookPages: v.workbookPages,
+      ops.push([doc(db, "lessons", L), { lessonId: L, unit: v.unit || j.meta.unitId, title: v.title, textbookPages: v.textbookPages, workbookPages: v.workbookPages,
         questionIds: j.questions.filter(q => q.lesson === L).map(q => q.questionId), published: L === "L04", uploadedAt: serverTimestamp() }]);
     }
     await commitInChunks(ops);
@@ -565,10 +565,11 @@ async function refreshDataStatus() {
     const [qs, ks, ls] = await Promise.all([getDocs(collection(db, "questions")), getDocs(collection(db, "answerKeys")), getDocs(collection(db, "lessons"))]);
     const approved = ks.docs.filter(d => d.data().answerKeyStatus === "approved").length;
     const imgs = qs.docs.filter(d => d.data().imageData).length;
-    const l04 = ls.docs.find(d => d.id === "L04");
-    $("#dataStatus").innerHTML = `문항 <b>${qs.size}</b>개 · 차시 <b>${ls.size}</b>개 · 정답 키 <b>${ks.size}</b>개 (승인 <b>${approved}</b> / 검토 대기 ${ks.size - approved}) · 문항 그림 <b>${imgs}</b>장` +
-      (l04 ? `<br>4차시: ${l04.data().title} – 문항 ${l04.data().questionIds.length}개` : "") +
-      (qs.size === 41 && ks.size >= 41 ? ` <span class="ok">✓ 준비 완료</span>` : "");
+    const by = (u) => { const q = qs.docs.filter(d => d.id.startsWith(`M52U${u}-`)), k = ks.docs.filter(d => d.id.startsWith(`M52U${u}-`));
+      const ap = k.filter(d => d.data().answerKeyStatus === "approved").length, im = q.filter(d => d.data().imageData).length;
+      return q.length ? `<br>${u}단원: 문항 <b>${q.length}</b> · 정답 키 ${k.length} (승인 <b>${ap}</b>) · 그림 ${im}장` : `<br>${u}단원: 아직 올리지 않음`; };
+    $("#dataStatus").innerHTML = `문항 <b>${qs.size}</b>개 · 차시 <b>${ls.size}</b>개 · 정답 키 <b>${ks.size}</b>개 (승인 <b>${approved}</b> / 검토 대기 ${ks.size - approved}) · 문항 그림 <b>${imgs}</b>장` + by(5) + by(6) +
+      (qs.size && ks.size >= qs.size ? ` <span class="ok">✓ 문항·정답 모두 있음</span>` : "");
   } catch (e) { $("#dataStatus").textContent = "확인 실패: " + e.code; }
 }
 $("#btnRefreshData").onclick = refreshDataStatus;
@@ -598,7 +599,10 @@ const KEYWORDS = {   // 서술형: 핵심어가 있으면 '정답 후보'로만 
   "M52U5-WB071-06:a": [["사다리꼴"], ["직사각형", "아니"], ["직사각형", "아닌"], ["직사각형", "않"], ["직사각형", "없"]],
   "M52U5-WB071-07:b": [["정육면체는", "직육면체"], ["직육면체는", "정육면체", "없"]],
   "M52U5-WB077-04:b": [["겹"]],
-  "M52U5-TB131-06:b": [["보이지", "실선"], ["보이지", "점선"]]
+  "M52U5-TB131-06:b": [["보이지", "실선"], ["보이지", "점선"]],
+  "M52U6-WB083-04:a": [["고르게"], ["옮기"], ["옮겨"], ["10"]],
+  "M52U6-WB089-02:b": [["청군", "백군"], ["반반"], ["둘중"], ["두가지"], ["2가지"]],
+  "M52U6-WB089-03:b": [["아닐"]]
 };
 const DRAWING_RULES = new Set(["edge_set_with_style", "net_fold_check", "net_fold_check_distinct"]);
 function gStrip(s, word) { const t = gBase(s); return t.startsWith(word) ? t.slice(word.length) : t; }
@@ -655,6 +659,34 @@ function gradePart(rule, student, answer, accepted = [], keyId = "") {
       const k = (arr) => [...new Set(arr.map(gFaceKey))].sort().join("|");
       return k(student) === k(answer) ? { verdict: "correct", reason: "집합 일치" } : { verdict: "wrong", reason: "집합 불일치" };
     }
+    case "numeric_list": {   // 막대그래프 등: 칸마다 수가 모두 같아야 정답
+      if (!Array.isArray(student) || student.length !== answer.length) return { verdict: "wrong", reason: "칸 수 다름" };
+      return answer.every((a, i) => gNormNumber(String(student[i] ?? "")) === a) ? { verdict: "correct", reason: "모두 일치" } : { verdict: "wrong", reason: "다른 값 있음" };
+    }
+    case "numeric_estimate": {   // 예상하기: 범위 안이면 정답
+      const v = gNormNumber(student);
+      if (v === null) return { verdict: "review", reason: "숫자 해석 실패" };
+      const lowOk = answer.minExclusive ? v > answer.min : v >= answer.min;
+      const highOk = answer.maxExclusive ? v < answer.max : v <= answer.max;
+      if (lowOk && highOk) return { verdict: "correct", reason: "알맞은 예상(범위 안)" };
+      return !lowOk ? { verdict: answer.below || "wrong", reason: "예상 범위보다 작음" } : { verdict: answer.above || "wrong", reason: "예상 범위보다 큼" };
+    }
+    case "spinner_more_red": {   // 회전판 색칠: 모든 칸 칠함 + 당첨 색이 더 많음 + 다른 색 1칸 이상
+      if (!Array.isArray(student)) return { verdict: "review", reason: "답 형식 확인" };
+      if (student.some(x => !x)) return { verdict: "wrong", reason: "칠하지 않은 칸 있음" };
+      const r = student.filter(x => x === answer.color).length, g = student.filter(x => x === answer.other).length;
+      if (g < 1) return { verdict: "wrong", reason: answer.other + " 칸 없음" };
+      return r > g ? { verdict: "correct", reason: `${answer.color} ${r}칸 > ${answer.other} ${g}칸` } : { verdict: "wrong", reason: `${answer.color} ${r}칸 ≤ ${answer.other} ${g}칸` };
+    }
+    case "mean_of_parts": {   // 학생이 표에 쓴 값들의 평균과 비교(answer.mean은 gradeQuestion이 계산)
+      if (answer == null || answer.mean == null) return { verdict: "review", reason: "표에 빈칸이 있어 확인 필요" };
+      const v = gNormNumber(student);
+      if (v === null) return { verdict: "review", reason: "숫자 해석 실패" };
+      const ok = Math.abs(v - answer.mean) < 1e-6 || Math.abs(v - Math.round(answer.mean * 10) / 10) < 1e-6;
+      return ok ? { verdict: "correct", reason: "표의 평균과 일치" } : { verdict: "wrong", reason: "표의 평균과 다름" };
+    }
+    case "open_response":
+      return { verdict: "review", reason: "자유 답 – 선생님 확인" };
     default:
       return { verdict: "review", reason: "자동 채점 규칙 없음(" + rule + ")" };
   }
@@ -664,7 +696,7 @@ function gradePart(rule, student, answer, accepted = [], keyId = "") {
 function guessTag(qid, pid, student, answer) {
   const s = Array.isArray(student) ? student.map(gBase) : gBase(student);
   const has = (face) => Array.isArray(s) && s.some(x => gFaceKey(x) === gFaceKey(face));
-  const id = qid.replace("M52U5-", "");
+  const id = qid.replace(/^M52U\d-/, "");
   if (id === "WB074-01" && pid === "b") return "MC-BASE-SIDE";
   if (id === "WB074-02" && pid === "a") return has("ㅁㅂㅅㅇ") ? "MC-BASE-SIDE" : "MC-PERP-FACE-COUNT";
   if (id === "WB074-02" && pid === "b") return gBase(student).startsWith("5") ? "MC-BASE-SIDE" : "MC-PERP-FACE-COUNT";
@@ -690,7 +722,9 @@ function gradeQuestion(key, rawAnswers) {
   for (const [pid, rule] of Object.entries(key.compareRules)) {
     const pts = key.partScores?.[pid] ?? 1; maxScore += pts;
     if (rule === "none") continue;
-    const r = gradePart(rule, rawAnswers?.[pid], ans.correctAnswer[pid], (ans.acceptedAnswers || {})[pid] || [], key.questionId + ":" + pid);
+    let corr = ans.correctAnswer[pid];
+    if (rule === "mean_of_parts") { const vs = (corr?.meanOf || []).map(k => gNormNumber(rawAnswers?.[k] ?? "")); corr = { mean: vs.length && !vs.some(v => v === null) ? vs.reduce((a, b) => a + b, 0) / vs.length : null }; }
+    const r = gradePart(rule, rawAnswers?.[pid], corr, (ans.acceptedAnswers || {})[pid] || [], key.questionId + ":" + pid);
     const p = { verdict: r.verdict, rule, reason: r.reason, score: 0, maxScore: pts };
     if (r.verdict === "correct") { p.score = pts; score += pts; }
     else if (r.verdict === "review") { needsReview = true; p.feedback = "선생님이 확인하고 있어요."; }
@@ -711,12 +745,14 @@ function gradeQuestion(key, rawAnswers) {
 //  과제
 // ════════════════════════════════════════════════════════════
 let assignments = [], asgUnsub = null;
+// 차시 ID → 이름: "L04" = 5단원 4차시, "U6-L03" = 6단원 3차시
+const lessonLabel = (id) => { const m = String(id).match(/^(?:U(\d)-)?L(\d+)$/); return m ? `${m[1] || 5}단원 ${Number(m[2])}차시` : id; };
 async function fillLessonSelect() {
   const sel = $("#asgLesson"); if (sel.options.length) return;
   try {
     const ls = await getDocs(collection(db, "lessons"));
     ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => (l.questionIds || []).length).sort((a, b) => a.id.localeCompare(b.id))
-      .forEach(l => { const o = document.createElement("option"); o.value = l.id; o.textContent = `${l.id} ${l.title} (${l.questionIds.length}문항)`; sel.appendChild(o); });
+      .forEach(l => { const o = document.createElement("option"); o.value = l.id; o.textContent = `${lessonLabel(l.id)} ${l.title} (${l.questionIds.length}문항)`; sel.appendChild(o); });
     sel.value = "L04";
   } catch (e) { log("차시 목록 실패: " + e.code); }
 }
@@ -750,11 +786,11 @@ $("#btnCreateAsg").onclick = async () => {
   if (assignments.some(a => a.lessonId === L && a.status === "open") && !confirm("이 차시에 이미 열린 과제가 있습니다. 하나 더 만들까요?")) return;
   // 미승인 정답 키 경고
   const keys = await Promise.all(ld.questionIds.map(q => getDoc(doc(db, "answerKeys", q))));
-  const pending = keys.filter(k => !k.exists() || k.data().answerKeyStatus !== "approved").map(k => k.id.replace("M52U5-", ""));
+  const pending = keys.filter(k => !k.exists() || k.data().answerKeyStatus !== "approved").map(k => k.id.replace(/^M52U\d-/, ""));
   if (pending.length && !confirm(`정답 키가 승인되지 않은 문항이 있습니다: ${pending.join(", ")}\n채점 결과가 '임시'로 표시됩니다. 계속할까요?`)) return;
   try {
     await addDoc(collection(db, "classes", cls.id, "assignments"), {
-      lessonId: L, title: `${L.replace("L0", "").replace("L", "")}차시 ${ld.title}`, textbookPages: ld.textbookPages, workbookPages: ld.workbookPages,
+      lessonId: L, title: `${lessonLabel(L)} ${ld.title}`, textbookPages: ld.textbookPages, workbookPages: ld.workbookPages,
       questionIds: ld.questionIds, components: { story: false, lab: false, workbook: true },
       policy: { maxAttempts: GRADING_POLICY.maxAttempts, requireNoteBeforeRetry: GRADING_POLICY.requireNoteBeforeRetry, noteRequiredAfterWrong: GRADING_POLICY.noteRequiredAfterWrong, revealAnswer: "afterDue" },
       status: "open", createdAt: serverTimestamp(), createdBy: me.email
@@ -824,7 +860,7 @@ async function gradeSubmission(id) {
   });
   if (!sub) return;
   const reject = (reason, text) => updateDoc(ref, { status: "rejected", rejectReason: reason, feedback: [{ partId: "*", text }], grader: { sessionId, gradedAt: Timestamp.now() } })
-    .then(() => log(`${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace("M52U5-", "")} 거절: ${text}`));
+    .then(() => log(`${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace(/^M52U\d-/, "")} 거절: ${text}`));
 
   // ② 검증
   const asg = await getAsg(sub.assignmentId);
@@ -891,11 +927,11 @@ async function gradeSubmission(id) {
   Object.entries(g.parts).filter(([, p]) => p.verdict === "review").forEach(([pid, p]) => {
     b.set(doc(collection(db, "classes", cls.id, "reviewQueue")), {
       submissionId: id, studentId: sub.studentId, questionId: sub.questionId, partId: pid,
-      rawAnswer: JSON.stringify(sub.rawAnswers?.[pid] ?? ""), reason: p.reason, maxScore: p.maxScore, status: "open", createdAt: serverTimestamp() });
+      rawAnswer: JSON.stringify(sub.rawAnswers?.[pid] ?? ""), otherAnswers: JSON.stringify(Object.fromEntries(Object.entries(sub.rawAnswers || {}).filter(([k, v]) => k !== pid && !(v && typeof v === "object" && v.drawingId)))), reason: p.reason, maxScore: p.maxScore, status: "open", createdAt: serverTimestamp() });
   });
   await b.commit();
   gradedCount++;
-  log(`채점: ${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace("M52U5-", "")} ${attemptNo}회차 → ${g.score}/${g.maxScore}${g.needsReview ? " (확인 필요)" : ""}`);
+  log(`채점: ${Number(sub.studentId.slice(1))}번 ${sub.questionId.replace(/^M52U\d-/, "")} ${attemptNo}회차 → ${g.score}/${g.maxScore}${g.needsReview ? " (확인 필요)" : ""}`);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -916,7 +952,7 @@ function watchResults() {
   resUnsub = onSnapshot(query(collection(db, "classes", cls.id, "submissions"), where("assignmentId", "==", aid)), snap => {
     const subs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const qids = asg.questionIds || [];
-    $("#resHead").innerHTML = `<tr><th>번호</th><th>모둠</th>${qids.map(q => `<th>${q.replace("M52U5-WB0", "").replace("M52U5-", "")}</th>`).join("")}<th>첫 시도</th><th>최종</th></tr>`;
+    $("#resHead").innerHTML = `<tr><th>번호</th><th>모둠</th>${qids.map(q => `<th>${q.replace(/^M52U\d-/, "")}</th>`).join("")}<th>첫 시도</th><th>최종</th></tr>`;
     const firstOk = Object.fromEntries(qids.map(q => [q, [0, 0]]));
     $("#resRows").innerHTML = students.map(st => {
       let f = 0, fin = 0, max = 0;
@@ -946,8 +982,9 @@ function watchReviewQueue() {
       const max = r.maxScore || 1;
       const scoreBtns = max > 1 ? `<button data-rv="${d.id}" data-sc="${max}">정답 ${max}점</button><button class="ghost" data-rv="${d.id}" data-sc="${Math.floor(max / 2)}">부분 ${Math.floor(max / 2)}점</button><button class="danger" data-rv="${d.id}" data-sc="0">오답 0점</button>`
         : `<button data-rv="${d.id}" data-sc="1">정답 처리</button><button class="danger" data-rv="${d.id}" data-sc="0">오답 처리</button>`;
-      return `<div class="rq" style="align-items:flex-start"><b>${Number(r.studentId.slice(1))}번</b> <span>${r.questionId.replace("M52U5-", "")} (${r.partId})</span>
+      return `<div class="rq" style="align-items:flex-start"><b>${Number(r.studentId.slice(1))}번</b> <span>${r.questionId.replace(/^M52U\d-/, "")} (${r.partId})</span>
         ${isDraw ? `<canvas class="rqdraw" data-hw="${raw.drawingId}" width="360" height="240" style="border:1px solid #e6e9f0;border-radius:8px;background:#fff"></canvas>` : `<span>학생 답: <code>${esc(typeof raw === "object" ? JSON.stringify(raw) : raw)}</code></span>`}
+        ${(() => { let o = {}; try { o = JSON.parse(r.otherAnswers || "{}"); } catch (_) {} const t = Object.entries(o).map(([k, v]) => `(${k}) ${Array.isArray(v) ? v.join(", ") : v}`).join(" · "); return t ? `<span class="muted" style="font-size:13px">같은 문제의 다른 답: ${esc(t)}</span>` : ""; })()}
         <span class="${/후보/.test(r.reason) ? "ok" : "muted"}">${esc(r.reason)}</span><span class="row" style="margin:0">${scoreBtns}</span></div>`; }).join("");
     $("#rqList").querySelectorAll("[data-rv]").forEach(b => b.onclick = () => resolveReview(b.dataset.rv, +b.dataset.sc));
     $("#rqList").querySelectorAll("canvas[data-hw]").forEach(async cv => {
@@ -1008,7 +1045,7 @@ async function resolveReview(rid, scoreGiven) {
         errorReasonType: "", errorReasonText: "", missedConcepts: [], correctMethodText: "", nextTimeTip: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       else b.update(nref, { status: "writing", attemptHistory: arrayUnion(hist), "retry.lastResult": "wrong", updatedAt: serverTimestamp() });
     }
-    await b.commit(); log(`확인 처리: ${Number(r.studentId.slice(1))}번 ${r.questionId.replace("M52U5-", "")} ${r.partId} → ${sc}/${p.maxScore}점`);
+    await b.commit(); log(`확인 처리: ${Number(r.studentId.slice(1))}번 ${r.questionId.replace(/^M52U\d-/, "")} ${r.partId} → ${sc}/${p.maxScore}점`);
   } catch (e) { log("확인 처리 실패: " + (e.code || e.message)); }
 }
 
@@ -1035,7 +1072,7 @@ $("#btnUpImg").onclick = async () => {
       const url = await compressImage(f);
       if (url.length > 900000) { log(`그림 ${f.name}: 너무 큼(${Math.round(url.length / 1024)}KB)`); continue; }
       await updateDoc(doc(db, "questions", qid), { imageData: url });
-      ok++; log(`그림 ${f.name} → ${qid.replace("M52U5-", "")} (${Math.round(url.length / 1024)}KB)`);
+      ok++; log(`그림 ${f.name} → ${qid.replace(/^M52U\d-/, "")} (${Math.round(url.length / 1024)}KB)`);
     }
     alert(`그림 ${ok}장 올리기 완료`); refreshDataStatus();
   } catch (e) { log("그림 올리기 실패: " + (e.code || e.message)); }
