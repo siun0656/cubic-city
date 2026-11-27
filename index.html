@@ -98,6 +98,14 @@
   .go { background:var(--wb); color:#fff; font-size:22px; font-weight:800; padding:14px 28px; border-radius:16px; min-height:58px; }
   .go.red { background:var(--mm); } .go.gray { background:#8a93a6; } .go:disabled { opacity:.5; }
   .actions { display:flex; gap:12px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+  .gradebar { position:fixed; left:0; right:0; bottom:0; background:#fff; box-shadow:0 -4px 14px rgba(0,0,0,.12); padding:12px 28px; display:flex; align-items:center; gap:16px; justify-content:flex-end; z-index:20; }
+  .gradebar span { font-size:19px; color:var(--sub); } .gradebar b { color:var(--ink); }
+  body.hasbar .homeWrap { padding-bottom:110px; }
+  .b-draft { background:#e3ecff; color:#2f5bea; }
+  .lastwrong { margin-top:8px; background:#fde8e8; color:var(--bad); border-radius:10px; padding:8px 12px; font-size:16px; }
+  .sumrow { display:flex; align-items:center; gap:14px; padding:12px 6px; border-bottom:1px solid var(--line); font-size:19px; cursor:pointer; }
+  .sumrow .mk { width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex:none; }
+  .sumrow .grow { flex:1; } .sumrow .st { font-size:16px; color:var(--sub); }
   .rline { display:flex; gap:14px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--line); font-size:19px; }
   .mark { font-size:30px; font-weight:900; min-width:40px; text-align:center; } .mark.o { color:var(--ok); } .mark.x { color:var(--bad); } .mark.w { color:#8a5a00; }
   .fb { background:#f4f6fb; border-radius:12px; padding:10px 14px; margin-top:8px; font-size:18px; line-height:1.45; }
@@ -175,8 +183,13 @@
     <div class="crumb"><button data-go="wb">← 문제 목록</button><span id="qTitle"></span></div>
     <div class="split">
       <div class="pc"><p class="qtext" id="qText"></p><div id="qFig"></div></div>
-      <div class="pc"><div id="qParts"></div><div class="actions"><button class="go" id="btnSubmit">제출하기 ▶</button></div></div>
+      <div class="pc"><div id="qParts"></div><div class="saved" id="qSaved"></div><div class="actions"><button class="go gray" id="btnPrev">◀ 이전 문제</button><button class="go" id="btnNext">다음 문제 ▶</button></div></div>
     </div>
+  </div>
+  <!-- 한 번에 채점한 결과 -->
+  <div class="homeWrap hidden" id="pSum">
+    <div class="crumb"><button data-go="wb">← 문제 목록</button><span>✅ 채점 결과</span></div>
+    <div class="pc" id="sumBody"></div>
   </div>
   <!-- 채점 결과 -->
   <div class="homeWrap hidden" id="pRes">
@@ -201,6 +214,7 @@
 <!-- 안내(교사 계정·정지 등) -->
 <section id="vNotice" class="hidden"><div class="notice"><h2 id="noticeTitle"></h2><p id="noticeBody" class="hint"></p><button id="noticeBtn">나가기</button></div></section>
 
+<div class="gradebar hidden" id="gradeBar"><span id="gbText"></span><button class="go" id="btnGrade">✅ 채점하기</button></div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -337,11 +351,11 @@ const qLabel = (q) => q ? (q.workbookPage ? `익힘 ${q.workbookPage}쪽 ${q.pro
 let prof = null, stu = null, asg = null, questions = {}, subs = [], notes = {}, unsubs = [];
 let view = { page: "home" }, firstSubsSnap = false;
 
-function page(id) { ["#pHome", "#pWb", "#pQ", "#pRes", "#pNotes", "#pNote"].forEach(p => $(p).classList.toggle("hidden", p !== "#" + id)); window.scrollTo(0, 0); }
+function page(id) { ["#pHome", "#pWb", "#pQ", "#pRes", "#pNotes", "#pNote", "#pSum"].forEach(p => $(p).classList.toggle("hidden", p !== "#" + id)); window.scrollTo(0, 0); setTimeout(updateGradeBar, 0); }
 document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
 function go(where) {
   if (where === "home") { view = { page: "home" }; page("pHome"); renderHome(); }
-  if (where === "wb") { view = { page: "wb" }; page("pWb"); renderWb(); }
+  if (where === "wb") { view = { page: "wb" }; page("pWb"); renderWb(); updateGradeBar(); }
   if (where === "notes") { view = { page: "notes" }; page("pNotes"); renderNotes(); }
 }
 
@@ -380,6 +394,8 @@ function refresh() {
   if (view.page === "wb") renderWb();
   if (view.page === "res") renderResult();
   if (view.page === "notes") renderNotes();
+  if (view.page === "sum") renderSummary();
+  updateGradeBar();
   if (view.page === "note") renderNoteStatusOnly();
 }
 
@@ -426,9 +442,10 @@ function renderWb() {
   if (!asg) { $("#wbBody").innerHTML = `<div class="pc">열린 과제가 없어요.</div>`; return; }
   const byPage = {};
   (asg.questionIds || []).forEach(id => { const q = questions[id]; const k = q ? (q.workbookPage ? `수학익힘 ${q.workbookPage}쪽` : `교과서 ${q.textbookPage}쪽`) : "문제"; (byPage[k] = byPage[k] || []).push(id); });
-  $("#wbBody").innerHTML = `<div class="today" style="margin-bottom:6px"><div class="t">${esc(asg.title)}</div><div class="s">한 문제는 ${asg.policy?.maxAttempts || 3}번까지 풀 수 있어요. 1번 틀리면 바로 다시 풀고, 2번 틀리면 오답노트를 쓴 뒤 마지막으로 도전해요.</div></div>` +
+  $("#wbBody").innerHTML = `<div class="today" style="margin-bottom:6px"><div class="t">${esc(asg.title)}</div><div class="s">① 문제를 모두 풀어요(답은 저절로 저장돼요) → ② 아래 <b>채점하기</b>를 눌러요 → ③ 틀린 문제만 다시 풀고 또 채점해요. 2번 틀린 문제는 오답노트를 쓴 뒤 마지막으로 한 번 더 도전해요.</div></div>` +
     Object.entries(byPage).map(([k, ids]) => `<div class="sec">${k}</div><div class="qgrid">${ids.map(id => {
       const q = questions[id], s = qState(id);
+      if (s.action === "solve" && hasDraft(id)) Object.assign(s, { label: "답 씀 ✓ 채점 전", cls: "b-draft" });
       return `<button class="qcard" data-q="${id}"><span class="tt">${q ? q.problemNumber + "번" : id}${q?.difficultyStars ? " " + "★".repeat(q.difficultyStars) : ""}</span>
         <span class="dd">${esc((q?.questionText || "").slice(0, 46))}${(q?.questionText || "").length > 46 ? "…" : ""}</span><span class="badge ${s.cls}">${s.label}</span></button>`;
     }).join("")}</div>`).join("");
@@ -446,14 +463,106 @@ let cur = null;   // { qid, ans, startedAt }
 function openQ(qid) {
   const q = questions[qid]; if (!q) return toast("문제를 불러오는 중이에요");
   const s = qState(qid);
-  cur = { qid, ans: {}, startedAt: Date.now() };
+  const d = drafts()[qid];
+  let init = d ? d.ans : {};
+  if (!d && s.attempts > 0 && s.last?.rawAnswers) {   // 다시 풀 때는 지난번 답을 채워 두고 틀린 칸만 고치게 함(그림은 새로 그림)
+    init = Object.fromEntries(Object.entries(s.last.rawAnswers).filter(([, v]) => !(v && typeof v === "object" && !Array.isArray(v))));
+  }
+  cur = { qid, ans: JSON.parse(JSON.stringify(init || {})), startedAt: d?.startedAt || Date.now() };
   view = { page: "q", qid }; page("pQ");
   $("#qTitle").textContent = `${qLabel(q)}${s.attempts ? ` · 다시 도전 ${s.attempts + 1}/${s.max}` : ""}`;
   $("#qText").textContent = q.questionText;
   $("#qFig").innerHTML = q.imageData ? `<img class="qimg" src="${q.imageData}" alt="${esc(q.figureAlt)}">` : (q.figureAlt ? `<div class="alt">🖼 ${esc(q.figureAlt)}</div>` : "");
   const box = $("#qParts"); box.innerHTML = "";
-  (q.parts || []).forEach(p => box.appendChild(partUI(p, cur.ans)));
-  $("#btnSubmit").disabled = false;
+  const lastPr = s.attempts > 0 ? (s.last?.partResults || {}) : {};
+  (q.parts || []).forEach(p => { const el = partUI(p, cur.ans);
+    if (lastPr[p.partId]?.correct === false) { const n = document.createElement("div"); n.className = "lastwrong"; n.textContent = "✖ 지난번에 틀렸어요. " + (lastPr[p.partId].feedback || "다시 생각해 봐요."); el.appendChild(n); }
+    box.appendChild(el); });
+  $("#qSaved").textContent = d ? "답이 저장되어 있어요 ✓" : "";
+  const order = roundIds(), i = order.indexOf(qid);
+  $("#btnPrev").classList.toggle("hidden", i <= 0);
+  $("#btnNext").textContent = i >= 0 && i < order.length - 1 ? "다음 문제 ▶" : "목록으로 ▶";
+  updateGradeBar();
+}
+// 이번에 풀 문제(채점 전이고 지금 풀 수 있는 문제)
+function roundIds() { return (asg?.questionIds || []).filter(id => questions[id] && qState(id).action === "solve"); }
+$("#qParts").addEventListener("click", () => setTimeout(saveDraft, 0));
+$("#qParts").addEventListener("input", () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(saveDraft, 300); });
+$("#btnNext").onclick = () => { saveDraft(); const o = roundIds(), i = o.indexOf(cur.qid); if (i >= 0 && i < o.length - 1) openQ(o[i + 1]); else go("wb"); };
+$("#btnPrev").onclick = () => { saveDraft(); const o = roundIds(), i = o.indexOf(cur.qid); if (i > 0) openQ(o[i - 1]); };
+
+// ── 답 초안(기기에 저장) ──────────────────────────────────
+const draftKey = () => `cc.draft.${prof.studentId}.${asg?.id}`;
+function drafts() { try { return JSON.parse(localStorage.getItem(draftKey()) || "{}"); } catch (_) { return {}; } }
+function filled(v) { return !(v === undefined || v === "" || v === null || (Array.isArray(v) && (!v.length || v.every(x => x === "" || x === 0)))); }
+function hasDraft(qid) { const d = drafts()[qid]; return !!d && Object.values(d.ans || {}).some(filled); }
+function saveDraft() {
+  if (!cur || view.page !== "q") return;
+  const all = drafts(); const any = Object.values(cur.ans).some(filled);
+  if (any) all[cur.qid] = { ans: cur.ans, startedAt: cur.startedAt, at: Date.now() }; else delete all[cur.qid];
+  localStorage.setItem(draftKey(), JSON.stringify(all));
+  $("#qSaved").textContent = any ? "답이 저장됐어요 ✓" : ""; updateGradeBar();
+}
+function dropDraft(qid) { const all = drafts(); delete all[qid]; localStorage.setItem(draftKey(), JSON.stringify(all)); }
+function updateGradeBar() {
+  const on = asg && ["wb", "q"].includes(view.page);
+  const ready = on ? roundIds().filter(hasDraft) : [];
+  const show = on && ready.length > 0;
+  $("#gradeBar").classList.toggle("hidden", !show); document.body.classList.toggle("hasbar", show);
+  if (show) { const left = roundIds().length - ready.length; $("#gbText").innerHTML = `답을 쓴 문제 <b>${ready.length}개</b>${left ? ` · 아직 안 푼 문제 ${left}개` : " · 모두 풀었어요!"}`; }
+}
+$("#btnGrade").onclick = async () => {
+  if (view.page === "q") saveDraft();
+  const ids = roundIds().filter(hasDraft), left = roundIds().length - ids.length;
+  if (!ids.length) return toast("먼저 문제를 풀어요");
+  if (left && !confirm(`아직 안 푼 문제가 ${left}개 있어요.\n푼 문제 ${ids.length}개만 먼저 채점할까요?`)) return;
+  $("#btnGrade").disabled = true;
+  const batch = [];
+  for (const qid of ids) {
+    const q = questions[qid], s = qState(qid), d = drafts()[qid];
+    const raw = {}; (q.parts || []).forEach(p => raw[p.partId] = d.ans[p.partId] ?? (p.inputType === "multi_select" ? [] : ""));
+    for (const [pid, v] of Object.entries(raw)) {
+      if (v && v.__strokes) {   // 그림 답: 손글씨(획) 문서로 먼저 저장
+        try {
+          const ref = doc(collection(db, "classes", prof.classId, "handwriting"));
+          await setDoc(ref, { studentId: prof.studentId, noteId: `q:${qid}:${pid}`, seq: s.attempts + 1, strokes: v.__strokes, width: v.w || 640, height: v.h || 420, background: v.bg || "grid", createdAt: serverTimestamp() });
+          raw[pid] = { drawingId: ref.id };
+        } catch (e) { $("#btnGrade").disabled = false; return toast("그림을 저장하지 못했어요 (" + e.code + ")"); }
+      }
+    }
+    const subId = uuid();
+    const data = { studentId: prof.studentId, assignmentId: asg.id, questionId: qid, lessonId: q.lesson || null,
+      attemptNo: s.attempts + 1, isRetry: s.attempts > 0, rawAnswers: raw, startedAt: d.startedAt || Date.now(),
+      durationMs: Date.now() - (d.startedAt || Date.now()), status: "submitted", clientVersion: "wb-2" };
+    pendingSave(subId, data); dropDraft(qid); batch.push(subId);
+    sendSubmission(subId, data);
+  }
+  $("#btnGrade").disabled = false;
+  view = { page: "sum", batch, at: Date.now() }; page("pSum"); renderSummary(); updateGradeBar();
+};
+// ── 한 번에 채점한 결과 ─────────────────────────────────
+function renderSummary() {
+  const ids = (view.batch || []).map(id => ({ id, s: subs.find(x => x.id === id), p: pendingAll()[id] }));
+  const rows = ids.map(({ id, s, p }) => {
+    const qid = s?.questionId || p?.questionId; const q = questions[qid]; const st = qState(qid);
+    let mk = ["⏳", "#eef1f8", "#5b6478"], txt = "채점 중…";
+    if (s && s.status === "graded" && s.allCorrect) { mk = ["○", "#e5f6ec", "var(--ok)"]; txt = "맞았어요!"; }
+    else if (s && s.status === "pending_review") { mk = ["…", "#fff4d6", "#8a5a00"]; txt = "선생님이 확인하고 있어요"; }
+    else if (s && s.status === "graded") { mk = ["×", "#fde8e8", "var(--bad)"]; txt = st.action === "note" ? "2번 틀렸어요 → 오답노트를 먼저 써요" : st.action === "solve" ? `틀렸어요 → 다시 풀어요 (${st.attempts}/${st.max})` : "기회를 다 썼어요"; }
+    else if (s && s.status === "rejected") { mk = ["!", "#fde8e8", "var(--bad)"]; txt = s.feedback?.[0]?.text || "처리되지 않았어요"; }
+    return `<div class="sumrow" data-sub="${id}" data-q="${qid}"><span class="mk" style="background:${mk[1]};color:${mk[2]}">${mk[0]}</span><span class="grow">${esc(qLabel(q))}<div class="st">${esc(txt)}</div></span><span class="st">자세히 ›</span></div>`;
+  }).join("");
+  const graded = ids.filter(x => x.s && ["graded", "pending_review", "rejected"].includes(x.s.status));
+  const ok = ids.filter(x => x.s?.allCorrect).length, waiting = ids.length - graded.length;
+  const retry = roundIds().length, noteN = (asg?.questionIds || []).filter(id => qState(id).action === "note").length;
+  const waitLong = Date.now() - (view.at || 0) > 12000;
+  $("#sumBody").innerHTML = `<p class="big">${waiting ? `⏳ 채점하고 있어요… (${graded.length}/${ids.length})` : ok === ids.length ? `🎉 모두 맞았어요! (${ok}/${ids.length})` : `맞힌 문제 ${ok}/${ids.length}`}</p>
+    ${waiting && waitLong ? `<p class="hint">선생님 화면이 켜지면 채점돼요. 답은 안전하게 저장되어 있어요.</p>` : ""}
+    ${rows}
+    <div class="actions">${!waiting && retry ? `<button class="go" data-act="retry">틀린 문제 다시 풀기 ▶</button>` : ""}${!waiting && noteN ? `<button class="go red" data-act="notes">오답노트 쓰러 가기 ▶</button>` : ""}<button class="go gray" data-act="wb">문제 목록</button></div>`;
+  $("#sumBody").querySelectorAll("[data-sub]").forEach(r => r.onclick = () => { if (subs.some(x => x.id === r.dataset.sub)) openResult(r.dataset.sub, r.dataset.q); });
+  $("#sumBody").querySelectorAll("[data-act]").forEach(b => b.onclick = () => { const a = b.dataset.act;
+    if (a === "retry") { const o = roundIds(); o.length ? openQ(o[0]) : go("wb"); } if (a === "notes") go("notes"); if (a === "wb") go("wb"); });
 }
 function partUI(p, ans) {
   const w = document.createElement("div"); w.className = "part";
@@ -462,35 +571,38 @@ function partUI(p, ans) {
   const mark = /△표/.test(p.prompt) ? "△ " : /○표/.test(p.prompt) ? "○ " : "";
   if (p.inputType === "single_choice" || p.inputType === "ox") {
     const c = document.createElement("div"); c.className = "chips";
-    opts.forEach(o => { const b = document.createElement("button"); b.className = "chip"; b.innerHTML = fracHtml(o);
+    opts.forEach(o => { const b = document.createElement("button"); b.className = "chip" + (ans[p.partId] === o ? " on" : ""); b.innerHTML = fracHtml(o);
       b.onclick = () => { ans[p.partId] = o; c.querySelectorAll(".chip").forEach(x => x.classList.toggle("on", x === b)); }; c.appendChild(b); });
     w.appendChild(c);
   } else if (p.inputType === "multi_select") {
-    ans[p.partId] = [];
+    ans[p.partId] = Array.isArray(ans[p.partId]) ? ans[p.partId].slice() : [];
     const c = document.createElement("div"); c.className = "chips";
-    opts.forEach(o => { const b = document.createElement("button"); b.className = "chip"; b.textContent = o;
+    opts.forEach(o => { const b = document.createElement("button"); const on0 = ans[p.partId].includes(o); b.className = "chip" + (on0 ? " on" : ""); b.textContent = (on0 ? mark || "✓ " : "") + o;
       b.onclick = () => { const a = ans[p.partId]; const i = a.indexOf(o); if (i >= 0) a.splice(i, 1); else a.push(o);
         b.classList.toggle("on", i < 0); b.textContent = (i < 0 ? mark || "✓ " : "") + o; }; c.appendChild(b); });
     w.appendChild(c);
   } else if (p.inputType === "point_name" || p.inputType === "segment_name") {
     const n = p.inputType === "point_name" ? 1 : 2, word = n === 1 ? "점" : "선분";
-    let letters = "";
+    let letters = String(ans[p.partId] || "").replace(word, "").replace(/\s/g, "").slice(0, n);
     const f = document.createElement("div"); f.className = "face"; f.innerHTML = `<span>${word}</span>` + "<span class='bx'></span>".repeat(n);
     const draw = () => { [...f.querySelectorAll(".bx")].forEach((x, i) => x.textContent = letters[i] || ""); ans[p.partId] = letters ? `${word} ${letters}` : ""; };
+    draw();
     const kp = document.createElement("div"); kp.className = "kp";
     [..."ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"].forEach(ch => { const b = document.createElement("button"); b.textContent = ch; b.onclick = () => { if (letters.length < n) { letters += ch; draw(); } }; kp.appendChild(b); });
     const del = document.createElement("button"); del.className = "wide"; del.textContent = "⌫ 지우기"; del.onclick = () => { letters = letters.slice(0, -1); draw(); }; kp.appendChild(del);
     w.appendChild(f); w.appendChild(kp);
   } else if (p.inputType === "long_text") {
-    const t = document.createElement("textarea"); t.className = "tx"; t.placeholder = "자유롭게 써요"; t.oninput = () => ans[p.partId] = t.value; w.appendChild(t);
+    const t = document.createElement("textarea"); t.className = "tx"; t.placeholder = "자유롭게 써요"; t.value = ans[p.partId] || ""; t.oninput = () => ans[p.partId] = t.value; w.appendChild(t);
   } else if (p.inputType === "isometric_edges" || p.inputType === "net_rectangles") {
     const pad = drawPad(p.inputType === "isometric_edges" ? "tri" : "grid");
-    pad.onChange = () => ans[p.partId] = pad.isEmpty() ? "" : { __drawing: pad };
+    if (ans[p.partId]?.__strokes) pad.load(ans[p.partId].__strokes);
+    pad.onChange = () => { ans[p.partId] = pad.isEmpty() ? "" : { __strokes: pad.serialize(), w: pad.W, h: pad.H, bg: pad.bg }; saveDraft(); };
     w.appendChild(pad.el);
   } else if (p.inputType === "face_name" || p.inputType === "face_pick_3d") {
-    let letters = "";
+    let letters = String(ans[p.partId] || "").replace("면", "").replace(/\s/g, "").slice(0, 4);
     const f = document.createElement("div"); f.className = "face"; f.innerHTML = `<span>면</span>` + "<span class='bx'></span>".repeat(4);
     const draw = () => { [...f.querySelectorAll(".bx")].forEach((x, i) => x.textContent = letters[i] || ""); ans[p.partId] = letters ? "면 " + letters : ""; };
+    draw();
     const kp = document.createElement("div"); kp.className = "kp";
     [..."ㄱㄴㄷㄹㅁㅂㅅㅇ"].forEach(ch => { const b = document.createElement("button"); b.textContent = ch; b.onclick = () => { if (letters.length < 4) { letters += ch; draw(); } }; kp.appendChild(b); });
     const del = document.createElement("button"); del.className = "wide"; del.textContent = "⌫ 지우기"; del.onclick = () => { letters = letters.slice(0, -1); draw(); }; kp.appendChild(del);
@@ -502,20 +614,19 @@ function partUI(p, ans) {
     w.appendChild(spinnerUI(p, ans));
   } else if (p.inputType === "number") {
     const r = document.createElement("div"); r.className = "numrow";
-    r.innerHTML = `<input class="tx" inputmode="decimal" autocomplete="off"><span class="unit">${esc(p.unit || "")}</span>`;
+    r.innerHTML = `<input class="tx" inputmode="decimal" autocomplete="off" value="${esc(ans[p.partId] ?? "")}"><span class="unit">${esc(p.unit || "")}</span>`;
     r.querySelector("input").oninput = (e) => ans[p.partId] = e.target.value.trim();
     w.appendChild(r);
   } else {
-    const i = document.createElement("input"); i.className = "tx"; i.autocomplete = "off"; i.oninput = () => ans[p.partId] = i.value; w.appendChild(i);
+    const i = document.createElement("input"); i.className = "tx"; i.autocomplete = "off"; i.value = ans[p.partId] || ""; i.oninput = () => ans[p.partId] = i.value; w.appendChild(i);
   }
   return w;
 }
-$("#btnSubmit").onclick = async () => {
+async function submitOne_unused() {   // (이전 방식: 한 문제씩 제출 – 지금은 '채점하기'로 한 번에 냄)
   const q = questions[cur.qid]; const s = qState(cur.qid);
   if (s.pending) return toast("채점 중인 답이 있어요. 잠시 기다려요.");
   const empty = (q.parts || []).filter(p => { const v = cur.ans[p.partId]; return v === undefined || v === "" || (Array.isArray(v) && !v.length); });
   if (empty.length && !confirm("아직 비어 있는 칸이 있어요. 그래도 낼까요?")) return;
-  $("#btnSubmit").disabled = true;
   const subId = uuid();
   const raw = {}; (q.parts || []).forEach(p => raw[p.partId] = cur.ans[p.partId] ?? (p.inputType === "multi_select" ? [] : ""));
   // 그림판 답: 먼저 손글씨(획) 문서로 저장하고, 답에는 문서 번호만 넣는다
@@ -526,7 +637,7 @@ $("#btnSubmit").onclick = async () => {
         const pad = v.__drawing;
         await setDoc(ref, { studentId: prof.studentId, noteId: `q:${cur.qid}:${pid}`, seq: s.attempts + 1, strokes: pad.serialize(), width: pad.W, height: pad.H, background: pad.bg, createdAt: serverTimestamp() });
         raw[pid] = { drawingId: ref.id };
-      } catch (e) { $("#btnSubmit").disabled = false; return toast("그림을 저장하지 못했어요 (" + e.code + ")"); }
+      } catch (e) { return toast("그림을 저장하지 못했어요 (" + e.code + ")"); }
     }
   }
   const data = { studentId: prof.studentId, assignmentId: asg.id, questionId: cur.qid, lessonId: q.lesson || null,
@@ -535,7 +646,7 @@ $("#btnSubmit").onclick = async () => {
   pendingSave(subId, data);
   openResult(subId, cur.qid);
   sendSubmission(subId, data);
-};
+}
 // 제출: 기기에 먼저 보관 → Firestore 전송(끊기면 다음 접속 때 다시 전송)
 function pendingAll() { try { return JSON.parse(localStorage.getItem("cc.pending") || "{}"); } catch (_) { return {}; } }
 function pendingSave(id, d) { const a = pendingAll(); a[id] = d; localStorage.setItem("cc.pending", JSON.stringify(a)); }
@@ -569,7 +680,7 @@ function fracHtml(o) { const m = String(o).match(/^(\d+)\/(\d+)$/); return m ? `
 // 막대그래프 입력: 칸을 눌러 막대 길이 정하기(같은 칸을 다시 누르면 한 칸 줄어듦)
 function barGraphUI(p, ans) {
   const cfg = p.config || {}, cats = cfg.categories || [], max = cfg.max || 10;
-  const vals = cats.map(() => 0);
+  const vals = cats.map((_, i) => Number(Array.isArray(ans[p.partId]) ? ans[p.partId][i] || 0 : 0));
   const el = document.createElement("div"); el.className = "bg";
   const rows = cats.map((c, ri) => {
     const r = document.createElement("div"); r.className = "row";
@@ -583,6 +694,7 @@ function barGraphUI(p, ans) {
   ax.innerHTML = `<div></div><div class="sc">${Array.from({ length: max + 1 }, (_, i) => i % 5 === 0 ? `<span style="left:${i / max * 100}%">${i}</span>` : "").join("")}</div><div>(${esc(cfg.unit || "")})</div>`;
   el.appendChild(ax);
   function paint() { rows.forEach((r, ri) => { [...r.querySelectorAll(".cells button")].forEach((b, i) => b.classList.toggle("f", i < vals[ri])); r.querySelector(".val").textContent = vals[ri]; }); }
+  paint();
   const tip = document.createElement("div"); tip.className = "alt"; tip.textContent = "막대 끝이 될 칸을 눌러요. 같은 칸을 다시 누르면 한 칸 줄어요."; el.appendChild(tip);
   return el;
 }
@@ -591,13 +703,14 @@ function barGraphUI(p, ans) {
 function spinnerUI(p, ans) {
   const cfg = p.config || {}, n = cfg.sectors || 5, colors = cfg.colors || ["빨강", "초록"];
   const HEX = { 빨강: "#ef4b3f", 초록: "#3bb273", 노랑: "#f7d23e", 파랑: "#4fa3e8", 보라: "#8e6bd1", 주황: "#f39a2b" };
-  const fill = Array(n).fill(""); let curC = colors[0];
+  const fill = Array.from({ length: n }, (_, i) => (Array.isArray(ans[p.partId]) && ans[p.partId][i]) || ""); let curC = colors[0];
   const el = document.createElement("div"); el.className = "sp";
   const R = 100, C = 110, pt = (a) => [C + R * Math.sin(a), C - R * Math.cos(a)];
   const paths = Array.from({ length: n }, (_, i) => { const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, [x0, y0] = pt(a0), [x1, y1] = pt(a1);
     return `<path data-i="${i}" d="M${C},${C} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="#fff"/>`; }).join("");
   el.innerHTML = `<svg viewBox="0 0 220 220">${paths}<line x1="${C}" y1="${C}" x2="${C}" y2="${C - 70}" stroke="#1d2433" stroke-width="4"/><polygon points="${C - 8},${C - 62} ${C},${C - 80} ${C + 8},${C - 62}" fill="#1d2433"/><circle cx="${C}" cy="${C}" r="5" fill="#1d2433"/></svg>
     <div class="pal">${colors.map((c, i) => `<button data-c="${esc(c)}" class="${i ? "" : "on"}" style="background:${HEX[c] || "#eee"};color:#fff">${esc(c)}</button>`).join("")}<span class="alt" style="margin:0">색을 고르고 칸을 눌러요</span></div>`;
+  el.querySelectorAll("path").forEach(pa => { const f0 = fill[+pa.dataset.i]; if (f0) pa.setAttribute("fill", HEX[f0] || "#ccc"); });
   el.querySelectorAll("[data-c]").forEach(b => b.onclick = () => { curC = b.dataset.c; el.querySelectorAll("[data-c]").forEach(x => x.classList.toggle("on", x === b)); });
   el.querySelectorAll("path").forEach(pa => pa.onclick = () => { const i = +pa.dataset.i; fill[i] = fill[i] === curC ? "" : curC; pa.setAttribute("fill", fill[i] ? HEX[fill[i]] || "#ccc" : "#fff"); ans[p.partId] = fill.slice(); });
   return el;
@@ -611,7 +724,8 @@ function drawPad(bg) {
   const cv = el.querySelector("canvas"), ctx = cv.getContext("2d");
   const strokes = []; let curS = null, tool = "#1d2433";
   const pad = { el, W, H, bg, onChange: () => {}, isEmpty: () => !strokes.length,
-    serialize: () => JSON.stringify({ v: 1, bg, w: W, h: H, s: strokes.map(s => [s.c, s.w, ...s.p.map(Math.round)]) }) };
+    serialize: () => JSON.stringify({ v: 1, bg, w: W, h: H, s: strokes.map(s => [s.c, s.w, ...s.p.map(Math.round)]) }),
+    load: (json) => { try { const o = JSON.parse(json); strokes.length = 0; (o.s || []).forEach(a => strokes.push({ c: a[0], w: a[1], p: a.slice(2) })); redraw(); } catch (_) {} } };
   function redraw() {
     ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); drawBackground(ctx, bg, W, H);
     for (const s of strokes) { if (s.p.length < 2) continue; ctx.lineWidth = s.w; ctx.lineCap = "round"; ctx.lineJoin = "round";
