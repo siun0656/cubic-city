@@ -530,6 +530,11 @@ $("#btnUp05").onclick = async () => {
         questionIds: j.questions.filter(q => q.lesson === L).map(q => q.questionId), published: L === "L04", uploadedAt: serverTimestamp() }]);
     }
     await commitInChunks(ops);
+    // 파일에서 빠진 문항(예: 교과서 문항)은 문항·정답 키를 함께 지운다
+    const keep = new Set(j.questions.map(q => q.questionId));
+    const gone = (await getDocs(collection(db, "questions"))).docs.map(d => d.id).filter(id => !keep.has(id));
+    for (let i = 0; i < gone.length; i += 200) { const b = writeBatch(db); gone.slice(i, i + 200).forEach(id => { b.delete(doc(db, "questions", id)); b.delete(doc(db, "answerKeys", id)); }); await b.commit(); }
+    if (gone.length) log(`파일에 없는 문항 ${gone.length}개 삭제: ${gone.map(id => id.replace(/^M52U\d-/, "")).join(", ")}`);
     log(`문항 ${j.questions.length}개, 차시 ${Object.keys(j.meta.lessons || {}).length}개 올리기 완료`); alert("문항 올리기 완료"); refreshDataStatus();
   } catch (e) { log("문항 올리기 실패: " + (e.code || e.message)); alert("실패: " + (e.code || e.message)); }
 };
