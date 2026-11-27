@@ -537,19 +537,27 @@ $("#btnUp06").onclick = async () => {
   try {
     const j = await readJsonFile($("#f06"));
     if (!String(j?.meta?.confidentiality || "").startsWith("TEACHER_ONLY") || !Array.isArray(j.answerKeys)) throw new Error("06_answer_key_teacher_only.json 형식이 아닙니다.");
+    // 이미 승인된 키는, 정답 내용이 같으면 예전 파일을 올려도 승인이 풀리지 않게 한다.
+    const prev = {}; (await getDocs(collection(db, "answerKeys"))).docs.forEach(d => prev[d.id] = d.data());
     const ops = j.answerKeys.map(k0 => {
       // Firestore는 '배열 안의 배열'을 저장할 수 없어(예: faceSizes [[2,6],…]) 정답·허용 답안은 JSON 문자열로 저장한다.
       // 채점 엔진: JSON.parse(answerJson) → { correctAnswer, acceptedAnswers }
       const { correctAnswer, acceptedAnswers, ...k } = k0;
       k.answerJson = JSON.stringify({ correctAnswer, acceptedAnswers });
-      const approved = APPROVED_L04.includes(k.questionId);
-      return [doc(db, "answerKeys", k.questionId), { ...k, version: 1,
+      const p = prev[k.questionId];
+      const keepPrev = p && p.answerKeyStatus === "approved" && p.answerJson === k.answerJson;
+      const approved = k.answerKeyStatus === "approved" || APPROVED_L04.includes(k.questionId) || keepPrev;
+      const changed = p && p.answerJson !== k.answerJson;
+      return [doc(db, "answerKeys", k.questionId), { ...k,
+        version: changed ? (p.version || 1) + 1 : (p?.version || 1),
         answerKeyStatus: approved ? "approved" : k.answerKeyStatus,
-        ...(approved ? { approvedBy: me.email, approvedAt: "2026-11-26", approvalNote: "교사 채팅 승인(13 문서 7장)" } : {}),
+        ...(approved ? { approvedBy: k.approvedBy || p?.approvedBy || me.email, approvedAt: k.approvedAt || p?.approvedAt || "2026-11-26",
+                         approvalNote: k.approvalNote || p?.approvalNote || "교사 채팅 승인" } : {}),
         uploadedAt: serverTimestamp() }];
     });
     await commitInChunks(ops);
-    log(`정답 키 ${j.answerKeys.length}개 올리기 완료 (L04 승인 ${APPROVED_L04.length}개)`); alert("정답 올리기 완료"); refreshDataStatus();
+    const nAp = ops.filter(([, v]) => v.answerKeyStatus === "approved").length;
+    log(`정답 키 ${j.answerKeys.length}개 올리기 완료 (승인 ${nAp}개)`); alert("정답 올리기 완료"); refreshDataStatus();
   } catch (e) { log("정답 올리기 실패: " + (e.code || e.message)); alert("실패: " + (e.code || e.message)); }
 };
 async function refreshDataStatus() {
