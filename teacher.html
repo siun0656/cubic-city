@@ -39,6 +39,16 @@
   .rq { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   #log { font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; color:var(--sub); max-height:180px; overflow:auto; background:#fafbfe; padding:8px; border-radius:8px; }
   .hidden { display:none !important; }
+  .nt-wrap { display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
+  .nt-list { max-height:72vh; overflow:auto; }
+  .nt-item { display:flex; gap:8px; align-items:center; width:100%; text-align:left; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:9px 10px; margin:0 0 6px; font-size:14px; }
+  .nt-item.on { border-color:var(--blue); box-shadow:0 0 0 2px #d6e0ff; } .nt-item .n { font-weight:800; min-width:38px; }
+  .nt-item .grow { flex:1; } .nt-sec { font-size:13px; color:var(--sub); font-weight:700; margin:10px 0 4px; }
+  .nt-box { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; background:#fbfcff; }
+  .nt-box h4 { margin:0 0 6px; font-size:14px; color:var(--sub); }
+  .nt-q img { max-width:100%; border:1px solid var(--line); border-radius:8px; }
+  .tpl button { font-size:13px; padding:6px 10px; }
+  @media (max-width:900px) { .nt-wrap { grid-template-columns:1fr; } }
   .center { max-width:420px; margin:12vh auto; text-align:center; }
   code { background:#eef1f8; padding:1px 6px; border-radius:5px; }
   .qrbox img { width:150px; height:150px; image-rendering:pixelated; }
@@ -80,6 +90,7 @@
     <button data-tab="cards">로그인 카드</button>
     <button data-tab="assign">과제</button>
     <button data-tab="results">채점 현황</button>
+    <button data-tab="notes">오답노트 <span id="noteBadge" class="pill bad hidden"></span></button>
     <button data-tab="data">문항·정답 올리기</button>
     <button data-tab="policy">채점 규칙</button>
   </nav>
@@ -175,6 +186,26 @@
     <div class="card">
       <h2>선생님 확인 대기 <span id="rqCount" class="pill"></span></h2>
       <div id="rqList" class="muted">없음</div>
+    </div>
+  </section>
+
+  <!-- 오답노트 확인 -->
+  <section data-pane="notes" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">오답노트 확인</h2>
+        <div class="row">
+          <label>보기</label><select id="ntFilter">
+            <option value="todo">확인할 노트(제출됨)</option><option value="help">도움 필요</option><option value="writing">쓰는 중·써야 함</option>
+            <option value="revisit">다시 쓰기 요청함</option><option value="resolved">해결</option><option value="all">전체</option></select>
+          <label>번호</label><select id="ntStu"><option value="">전체</option></select>
+        </div>
+      </div>
+      <p class="muted">학생이 오답노트를 제출하면 여기에 모입니다. <b>잘 썼어요</b>를 누르면 칭찬이 전달되고, <b>다시 써 볼까요</b>를 누르면 학생 화면에 '선생님이 다시 생각해 보래요'가 뜨고 노트를 고칠 수 있게 됩니다.</p>
+      <div class="nt-wrap">
+        <div class="nt-list" id="ntList"><span class="muted">불러오는 중…</span></div>
+        <div id="ntDetail" class="muted">왼쪽에서 노트를 고르세요.</div>
+      </div>
     </div>
   </section>
 
@@ -345,7 +376,7 @@ async function openClass(id) {
     pins = ps.exists() ? ps.data() : {};
     await loadStudents();
     renderClassInfo();
-    watchAssignments(); startEngine(); watchReviewQueue();
+    watchAssignments(); startEngine(); watchReviewQueue(); watchNotes();
   } catch (e) { log("학급 열기 실패: " + e.code); }
 }
 
@@ -1082,6 +1113,84 @@ $("#btnUpImg").onclick = async () => {
     alert(`그림 ${ok}장 올리기 완료`); refreshDataStatus();
   } catch (e) { log("그림 올리기 실패: " + (e.code || e.message)); }
 };
+
+// ════════════════════════════════════════════════════════════
+//  오답노트 확인·피드백 (교사)
+// ════════════════════════════════════════════════════════════
+const NT_REASON = { calc: "계산 실수", misread: "문제를 잘못 읽음", concept: "개념을 몰랐음", figure: "그림을 잘못 봄", other: "기타" };
+const NT_CONCEPT = { "MC-PARALLEL-FACE": "마주 보는 면은 서로 평행하다", "MC-PERP-FACE-COUNT": "한 면과 수직인 면은 4개이다", "MC-BASE-SIDE": "밑면·옆면의 뜻",
+  "MC-FACE-NAMING": "면 이름은 꼭짓점을 둘레를 따라 읽는다", "MC-PARALLEL-PAIRS": "평행한 면은 3쌍이다", "MC-PERP-VISUAL": "보이지 않는 면도 확인한다",
+  "MC-DIM-MAP": "길이가 어느 모서리인지 확인한다", "MC-EDGE-SUM": "모서리 4개의 길이를 모두 더한다" };
+const NT_ST = { auto_created: ["써 두면 좋음", "pill"], writing: ["써야 함", "pill bad"], submitted: ["제출됨", "pill warn"], revisit_requested: ["다시 쓰기 요청", "pill bad"], resolved: ["해결", "pill ok"] };
+const NT_TPL = ["틀린 이유를 정확하게 찾았어요! 👍", "올바른 방법을 차근차근 잘 썼어요.", "다음에 주의할 점까지 써서 훌륭해요.",
+  "틀린 이유를 조금 더 자세히 써 볼까요?", "③ 올바른 방법을 처음부터 끝까지 다시 써 볼까요?", "선생님과 같이 이야기해 봐요. 쉬는 시간에 와 줄래요?"];
+let ntNotes = [], ntUnsub = null, ntSel = null; const ntQ = {};
+const ntUnread = (n) => n.status === "submitted" && !(n.teacherFeedback && (n.teacherFeedback.at?.toMillis?.() || 0) >= (n.updatedAt?.toMillis?.() || 0));
+function watchNotes() {
+  if (ntUnsub) ntUnsub();
+  const sel = $("#ntStu"); sel.innerHTML = `<option value="">전체</option>` + students.map(s => `<option value="${s.id}">${s.studentNo}번</option>`).join("");
+  ntUnsub = onSnapshot(collection(db, "classes", cls.id, "wrongNotes"), snap => {
+    ntNotes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const todo = ntNotes.filter(ntUnread).length, help = ntNotes.filter(n => n.helpNeeded && n.status !== "resolved").length;
+    $("#noteBadge").textContent = todo + (help ? ` · 도움 ${help}` : ""); $("#noteBadge").classList.toggle("hidden", !todo && !help);
+    renderNoteList(); if (ntSel) renderNoteDetail(ntSel, true);
+  }, e => log("오답노트 구독 오류: " + e.code));
+}
+$("#ntFilter").onchange = renderNoteList; $("#ntStu").onchange = renderNoteList;
+const stuNo = (sid) => Number(String(sid).slice(1));
+const qShort = (qid) => { const q = ntQ[qid]; return q ? `${q.unit === "M52-U6" ? "6" : "5"}단원 · 익힘 ${q.workbookPage}쪽 ${q.problemNumber}번` : qid.replace(/^M52U\d-/, ""); };
+async function ntLoadQ(ids) { await Promise.all([...new Set(ids)].filter(id => !ntQ[id]).map(async id => { try { const s = await getDoc(doc(db, "questions", id)); ntQ[id] = s.exists() ? s.data() : { missing: true }; } catch (_) { ntQ[id] = { missing: true }; } })); }
+async function renderNoteList() {
+  const f = $("#ntFilter").value, sid = $("#ntStu").value;
+  const pick = { todo: ntUnread, help: n => n.helpNeeded && n.status !== "resolved", writing: n => ["auto_created", "writing"].includes(n.status),
+    revisit: n => n.status === "revisit_requested", resolved: n => n.status === "resolved", all: () => true }[f];
+  const list = ntNotes.filter(n => pick(n) && (!sid || n.studentId === sid)).sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  await ntLoadQ(list.map(n => n.questionId));
+  if (!list.length) { $("#ntList").innerHTML = `<span class="muted">${f === "todo" ? "확인할 노트가 없어요. 🎉" : "해당하는 노트가 없어요."}</span>`; return; }
+  $("#ntList").innerHTML = list.map(n => { const [lb, c] = NT_ST[n.status] || [n.status, "pill"]; const wrong = (n.attemptHistory || []).filter(h => !h.allCorrect).length;
+    return `<button class="nt-item ${n.id === ntSel ? "on" : ""}" data-nt="${n.id}"><span class="n">${stuNo(n.studentId)}번</span><span class="grow">${esc(qShort(n.questionId))}<br><span class="muted">틀림 ${wrong}번${n.helpNeeded && n.status !== "resolved" ? " · <b class='bad'>도움 필요</b>" : ""}${n.teacherFeedback ? " · 💬" : ""}</span></span><span class="${c}">${lb}</span></button>`; }).join("");
+  $("#ntList").querySelectorAll("[data-nt]").forEach(b => b.onclick = () => { ntSel = b.dataset.nt; renderNoteList(); renderNoteDetail(ntSel); });
+}
+function fmtA(v) { if (Array.isArray(v)) return v.length ? v.join(", ") : "(고르지 않음)"; if (v && typeof v === "object") return v.drawingId ? "(그림)" : JSON.stringify(v); return v === undefined || v === "" ? "(빈칸)" : String(v); }
+async function renderNoteDetail(id, quiet) {
+  const n = ntNotes.find(x => x.id === id); if (!n) { $("#ntDetail").innerHTML = "노트를 찾을 수 없어요."; return; }
+  if (quiet && document.activeElement && document.activeElement.id === "ntText") return;   // 입력 중에는 다시 그리지 않음
+  await ntLoadQ([n.questionId]); const q = ntQ[n.questionId] || {};
+  const parts = q.parts || [];
+  const hist = (n.attemptHistory || []).map(h => `<tr><td>${h.attemptNo}회</td><td>${parts.map(p => `${parts.length > 1 ? `(${p.partId}) ` : ""}${esc(fmtA(h.answers?.[p.partId]))}`).join("<br>")}</td><td>${h.score ?? "–"}${h.maxScore ? "/" + h.maxScore : ""}${h.allCorrect ? " ○" : ""}</td></tr>`).join("");
+  const concepts = (n.missedConcepts || []).map(c => NT_CONCEPT[c] || c);
+  const [lb, c] = NT_ST[n.status] || [n.status, "pill"];
+  $("#ntDetail").innerHTML = `<div class="row" style="margin-top:0"><b style="font-size:18px">${stuNo(n.studentId)}번 · ${esc(qShort(n.questionId))}</b><span class="${c}">${lb}</span>${n.helpNeeded && n.status !== "resolved" ? `<span class="pill bad">도움 필요</span>` : ""}</div>
+    <div class="nt-box nt-q"><h4>문제</h4><div>${esc(q.questionText || "")}</div>${q.imageData ? `<img src="${q.imageData}" alt="">` : ""}</div>
+    <div class="nt-box"><h4>푼 기록</h4><table><thead><tr><th>회차</th><th>학생 답</th><th>점수</th></tr></thead><tbody>${hist || `<tr><td colspan="3" class="muted">기록 없음</td></tr>`}</tbody></table></div>
+    <div class="nt-box"><h4>학생이 쓴 오답노트</h4>
+      <p><b>① 틀린 이유</b> ${esc(NT_REASON[n.errorReasonType] || "(고르지 않음)")}${n.errorReasonText ? ` – ${esc(n.errorReasonText)}` : ""}</p>
+      <p><b>② 놓친 개념</b> ${concepts.length ? concepts.map(esc).join(", ") : "(고르지 않음)"}</p>
+      <p><b>③ 올바른 방법</b><br>${n.correctMethodText ? esc(n.correctMethodText).replace(/\n/g, "<br>") : "<span class='muted'>(비어 있음)</span>"}</p>
+      <p style="margin-bottom:0"><b>④ 다음에 주의할 점</b> ${esc(n.nextTimeTip || "(비어 있음)")}</p></div>
+    ${n.teacherFeedback ? `<div class="nt-box" style="background:#f0f7ff"><h4>보낸 피드백</h4>${n.teacherFeedback.stamp === "good" ? "👍 " : "✏️ "}${esc(n.teacherFeedback.text || "")}</div>` : ""}
+    ${n.revisitReason && n.status === "revisit_requested" ? `<div class="nt-box" style="background:#fff6f6"><h4>다시 쓰기 요청 내용</h4>${esc(n.revisitReason)}</div>` : ""}
+    <div class="nt-box"><h4>피드백 보내기</h4>
+      <div class="row tpl">${NT_TPL.map((t, i) => `<button class="ghost" data-tpl="${i}">${esc(t)}</button>`).join("")}</div>
+      <textarea id="ntText" rows="2" style="width:100%" placeholder="학생에게 보낼 말 (비워 두면 기본 문장)"></textarea>
+      <div class="row"><button id="ntGood">👍 잘 썼어요</button><button id="ntRevisit" class="danger">✏️ 다시 써 볼까요</button>
+        <span class="muted">${n.status === "resolved" ? "이미 해결한 문제예요. 피드백만 남길 수 있어요." : ""}</span></div></div>`;
+  $("#ntDetail").querySelectorAll("[data-tpl]").forEach(b => b.onclick = () => { $("#ntText").value = NT_TPL[+b.dataset.tpl]; });
+  $("#ntGood").onclick = () => sendNoteFeedback(n, "good");
+  $("#ntRevisit").onclick = () => sendNoteFeedback(n, "revisit");
+  $("#ntRevisit").disabled = n.status === "resolved";
+}
+async function sendNoteFeedback(n, kind) {
+  const text = $("#ntText").value.trim() || (kind === "good" ? "오답노트를 잘 정리했어요! 👍" : "오답노트를 조금 더 자세히 다시 써 볼까요?");
+  const upd = { teacherFeedback: { text, stamp: kind, by: me.email, at: Timestamp.now() }, teacherReviewedAt: serverTimestamp() };
+  if (kind === "revisit") Object.assign(upd, { status: "revisit_requested", revisitReason: text, updatedAt: serverTimestamp() });
+  try {
+    await updateDoc(doc(db, "classes", cls.id, "wrongNotes", n.id), upd);
+    await addDoc(collection(db, "classes", cls.id, "auditLogs"), { type: kind === "good" ? "noteFeedback" : "noteRevisit", noteId: n.id, by: me.email, at: serverTimestamp() });
+    log(`${stuNo(n.studentId)}번 ${n.questionId.replace(/^M52U\d-/, "")} 오답노트: ${kind === "good" ? "칭찬" : "다시 쓰기 요청"}`);
+    if (kind === "good" && $("#ntFilter").value === "todo") { const nx = ntNotes.filter(x => ntUnread(x) && x.id !== n.id)[0]; ntSel = nx ? nx.id : null; if (!nx) $("#ntDetail").innerHTML = `<span class="muted">확인할 노트를 모두 봤어요. 🎉</span>`; }
+  } catch (e) { log("피드백 저장 실패: " + e.code); alert("저장하지 못했어요: " + e.code); }
+}
 
 // ── 채점 규칙 ──────────────────────────────────────────
 const POLICY_ROWS = [

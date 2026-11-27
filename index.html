@@ -678,7 +678,7 @@ function renderNotes() {
   $("#notesBody").innerHTML = `<div class="qgrid">${list.map(n => { const q = questions[n.questionId]; const [lb, c] = NOTE_ST[n.status] || [n.status, "b-new"];
     const opt = ["auto_created", "writing"].includes(n.status) && !noteRequired(n);
     const [lb2, c2] = opt ? (qState(n.questionId).solved ? ["맞혔어요 · 정리는 선택", "b-ok"] : ["써 두면 좋아요(선택)", "b-new"]) : [lb, c];
-    return `<button class="qcard" data-n="${n.questionId}"><span class="tt">${esc(qLabel(q))}</span><span class="dd">틀린 횟수 ${(n.attemptHistory || []).filter(h => !h.allCorrect).length}번</span><span class="badge ${c2}">${lb2}</span></button>`; }).join("")}</div>`;
+    return `<button class="qcard" data-n="${n.questionId}"><span class="tt">${esc(qLabel(q))}</span><span class="dd">틀린 횟수 ${(n.attemptHistory || []).filter(h => !h.allCorrect).length}번${n.teacherFeedback?.stamp === "good" ? " · 👍 선생님 칭찬" : ""}</span><span class="badge ${c2}">${lb2}</span></button>`; }).join("")}</div>`;
   $("#notesBody").querySelectorAll("[data-n]").forEach(b => b.onclick = () => {
     const n = notes[b.dataset.n]; if (n.status === "submitted") { const s = qState(n.questionId); if (s.action === "solve" && asg && n.assignmentId === asg.id) return openQ(n.questionId); }
     openNote(b.dataset.n);
@@ -703,7 +703,8 @@ function openNote(qid) {
     ${q?.imageData ? `<img class="qimg" src="${q.imageData}" alt="">` : ""}
     <div class="nlabel">처음 낸 답</div>${(q?.parts || []).map(p => `<div class="hint" style="margin:2px 0">${q.parts.length > 1 ? `(${p.partId}) ` : ""}${esc(fmtAns(n.firstAnswer?.[p.partId]))}</div>`).join("")}
     ${last?.feedback?.length ? `<div class="nlabel">채점 피드백</div>${last.feedback.map(f => `<div class="fb">💬 ${esc(f.text)}</div>`).join("")}` : ""}
-    ${n.revisitReason ? `<div class="nlabel">선생님 말씀</div><div class="fb">🧑‍🏫 ${esc(n.revisitReason)}</div>` : ""}`;
+    ${n.status === "revisit_requested" && n.revisitReason ? `<div class="nlabel">선생님 말씀</div><div class="fb">🧑‍🏫 ${esc(n.revisitReason)}</div>` : ""}
+    ${n.teacherFeedback?.stamp === "good" ? `<div class="nlabel">선생님 말씀</div><div class="fb" style="background:#e5f6ec">👍 ${esc(n.teacherFeedback.text)}</div>` : ""}`;
   const d = nt.data, dis = editable ? "" : "disabled";
   $("#noteRight").innerHTML = `
     <div class="nlabel">① 왜 틀렸다고 생각하나요?</div>
